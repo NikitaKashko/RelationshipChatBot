@@ -46,6 +46,10 @@ Pair-data use SHALL require both partners' AI consent. DeepSeek SHALL receive on
 - **WHEN** either partner lacks pair AI consent
 - **THEN** pair-data requests are not sent and manual collection and planning remain usable.
 
+#### Scenario: Reopening an enabled assistant
+- **WHEN** a user who enabled the assistant opens its menu again, including after application restart
+- **THEN** the UI shows stored consent as enabled without creating another consent draft, distinguishes missing partner consent, and offers large navigation and settings buttons; commands remain optional.
+
 ### Requirement: Private conversation retention
 Each user SHALL have a private contextual conversation retained for thirty days, with clear-history and new-conversation actions. Confirmed structured data SHALL remain separate. Partners and the owner panel SHALL not expose those personal texts.
 

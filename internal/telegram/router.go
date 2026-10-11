@@ -96,7 +96,7 @@ func (r *Router) home(ctx context.Context, b *bot.Bot, actor int64) {
 			r.draft(ctx, b, actor, "location_confirm", identity.LocationConfirmation{Version: version}, "Подтвердить город пары: "+city.String+"\nЧасовой пояс: "+zone.String)
 			return
 		}
-		r.send(ctx, b, actor, "Вы в паре 💛\nПиши обычным текстом: «куда сходить?» или «подготовь свидание завтра». Для ИИ оба включают /ai.\n/places — копилка\n/plans — свидания\n/location — город пары\n/names — имена для уведомлений\nМожно отправить знак внимания кнопкой ниже.", affectionKeyboard())
+		r.showMenu(ctx, b, actor, true)
 		return
 	}
 	e := Enrollment{Store: r.Store}
@@ -116,7 +116,7 @@ func (r *Router) home(ctx context.Context, b *bot.Bot, actor int64) {
 		r.send(ctx, b, actor, "Создать пару с "+name+"?", button("Создать пару", "save:"+draft))
 		return
 	}
-	r.send(ctx, b, actor, "Профиль готов 💛\n/invite — ссылка для партнёра\n/cancelinvite — отменить приглашение\n/places — твои идеи\n/ai — включить помощника", nil)
+	r.showMenu(ctx, b, actor, false)
 }
 
 func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -137,7 +137,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 			}
 			return
 		}
-		if r.aiCallback(ctx, b, q) || r.affectionCallback(ctx, b, q) || r.feedbackCallback(ctx, b, q) || r.collectionCallback(ctx, b, q) {
+		if r.menuCallback(ctx, b, q) || r.aiCallback(ctx, b, q) || r.affectionCallback(ctx, b, q) || r.feedbackCallback(ctx, b, q) || r.collectionCallback(ctx, b, q) {
 			return
 		}
 		if !strings.HasPrefix(q.Data, "save:") {
@@ -169,6 +169,12 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 	}
 	actor := m.From.ID
 	text := strings.TrimSpace(m.Text)
+	if command, ok := menuCommands[text]; ok {
+		text = command
+		copyMessage := *m
+		copyMessage.Text = text
+		m = &copyMessage
+	}
 	ids := identity.Service{Store: r.Store}
 	e := Enrollment{Store: r.Store}
 	parts := strings.Fields(text)
@@ -216,6 +222,10 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 			return
 		}
 		r.wizard(ctx, b, actor, w)
+		return
+	}
+	if text == "/settings" {
+		r.send(ctx, b, actor, "Настройки 💛", navButtons("🤖 Помощник", "ai", "🌍 Город пары", "location", "💛 Имена для уведомлений", "names", "📋 Кандидаты свидания", "candidates", "🚫 Отменить приглашения партнёра", "cancelinvite", "🏠 Главное меню", "start"))
 		return
 	}
 	if text == "/invite" {

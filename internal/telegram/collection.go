@@ -30,7 +30,17 @@ func (r *Router) draft(ctx context.Context, b *bot.Bot, actor int64, kind string
 		r.send(ctx, b, actor, publicError(err), nil)
 		return
 	}
-	r.send(ctx, b, actor, preview, button("Сохранить", "save:"+id))
+	label := "Сохранить"
+	if kind == "consent" {
+		if consent, ok := p.(map[string]any); ok && consent["kind"] == "ai" {
+			if consent["enabled"] == true {
+				label = "✅ Включить помощника"
+			} else {
+				label = "⏸ Отключить помощника"
+			}
+		}
+	}
+	r.send(ctx, b, actor, preview, button(label, "save:"+id))
 }
 
 func (r *Router) card(ctx context.Context, b *bot.Bot, actor, id int64) {

@@ -64,6 +64,15 @@ func (r *Router) aiCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQ
 func (r *Router) aiMessage(ctx context.Context, b *bot.Bot, actor int64, text string) bool {
 	switch text {
 	case "/ai":
+		enabled, status, err := r.aiStatus(ctx, actor)
+		if err != nil {
+			r.send(ctx, b, actor, publicError(err), nil)
+			return true
+		}
+		if enabled {
+			r.send(ctx, b, actor, status+"\nНапиши, что хочется придумать или добавить.", navButtons("✨ Новый разговор", "newchat", "🧹 Очистить историю", "clearchat", "⏸ Отключить помощника", "ai_off", "🏠 Главное меню", "start"))
+			return true
+		}
 		r.draft(ctx, b, actor, "consent", map[string]any{"kind": "ai", "enabled": true}, "Разрешить DeepSeek использовать твой текст, необходимые поля мест, даты планов и подтверждённые предпочтения? Для данных пары требуется согласие обоих. Имена для уведомлений, Telegram ID и фото не передаём. История личная, 30 дней. Для отключения — /ai_off.")
 		return true
 	case "/ai_off":
