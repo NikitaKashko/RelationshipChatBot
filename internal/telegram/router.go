@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/actions"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/ai"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
@@ -19,6 +20,7 @@ import (
 type Router struct {
 	Store    *store.Store
 	Username string
+	AI       *ai.Service
 }
 
 func button(text, data string) models.InlineKeyboardMarkup {
@@ -93,7 +95,7 @@ func (r *Router) home(ctx context.Context, b *bot.Bot, actor int64) {
 			r.draft(ctx, b, actor, "location_confirm", identity.LocationConfirmation{Version: version}, "Подтвердить город пары: "+city.String+"\nЧасовой пояс: "+zone.String)
 			return
 		}
-		r.send(ctx, b, actor, "Вы в паре 💛\n/location город | Europe/Moscow — предложить город пары\n/places — копилка\n/add — добавить идею\n/plan — ручной план. ИИ и доставка уведомлений ещё подключаются.", nil)
+		r.send(ctx, b, actor, "Вы в паре 💛\nПиши обычным текстом: «куда сходить?» или «подготовь свидание завтра». Для ИИ оба включают /ai.\n/places — копилка\n/plans — свидания\n/location — город пары\n/names — имена для уведомлений\nМожно отправить знак внимания кнопкой ниже.", affectionKeyboard())
 		return
 	}
 	e := Enrollment{Store: r.Store}
@@ -121,7 +123,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		if q.Message.Message == nil || q.Message.Message.Chat.Type != models.ChatTypePrivate || q.Message.Message.Chat.ID != q.From.ID {
 			return
 		}
-		if r.feedbackCallback(ctx, b, q) || r.collectionCallback(ctx, b, q) {
+		if r.aiCallback(ctx, b, q) || r.affectionCallback(ctx, b, q) || r.feedbackCallback(ctx, b, q) || r.collectionCallback(ctx, b, q) {
 			return
 		}
 		if !strings.HasPrefix(q.Data, "save:") {
@@ -212,6 +214,9 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		return
 	}
 	if r.collectionMessage(ctx, b, m) {
+		return
+	}
+	if r.aiMessage(ctx, b, actor, text) {
 		return
 	}
 	r.send(ctx, b, actor, "Регистрация готова. /start — профиль и приглашение в пару. Остальные функции пока в разработке.", nil)

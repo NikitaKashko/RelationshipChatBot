@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/NikitaKashko/RelationshipChatBot/internal/ai"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/config"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/notifications"
@@ -28,6 +29,21 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	switch command {
+	case "check-ai-flow":
+		flowCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		return checkAIFlow(flowCtx, cfg)
+	case "check-ai":
+		provider := ai.DeepSeek{Key: cfg.DeepSeekKey, Model: cfg.DeepSeekModel}
+		answer, err := provider.Complete(ctx, []ai.Message{{Role: "user", Content: "Ответь одним словом: OK"}}, nil)
+		if err != nil {
+			return fmt.Errorf("DeepSeek credential check failed")
+		}
+		if answer.Message.Content == "" {
+			return fmt.Errorf("DeepSeek returned no text")
+		}
+		fmt.Println("AI_OK (synthetic request; no personal data)")
+		return nil
 	case "serve":
 		if cfg.BotToken == "" {
 			return fmt.Errorf("BOT_TOKEN is missing")
@@ -38,6 +54,14 @@ func run() error {
 		}
 		defer db.DB.Close()
 		r := &telegram.Router{Store: db}
+		r.AI = &ai.Service{Store: db, Model: cfg.DeepSeekModel}
+		if cfg.DeepSeekKey != "" {
+			r.AI.Provider = &ai.DeepSeek{Key: cfg.DeepSeekKey, Model: cfg.DeepSeekModel}
+		}
+		// Retention/clear remain active when the external provider is disabled.
+		if err = r.AI.Prune(ctx); err != nil {
+			return fmt.Errorf("AI history cleanup failed")
+		}
 		b, err := bot.New(cfg.BotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {}), bot.WithDefaultHandler(r.Handle))
 		if err != nil {
 			return fmt.Errorf("invalid Telegram configuration")
@@ -54,6 +78,25 @@ func run() error {
 			return fmt.Errorf("notification recovery failed")
 		}
 		workerDone := make(chan error, 1)
+		cleanupDone := make(chan struct{})
+		go func() {
+			defer close(cleanupDone)
+			ticker := time.NewTicker(time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-poll.Done():
+					return
+				case <-ticker.C:
+					if r.AI != nil {
+						if e := r.AI.Prune(poll); e != nil {
+							stop()
+							return
+						}
+					}
+				}
+			}
+		}()
 		go func() {
 			e := worker.Run(poll)
 			workerDone <- e
@@ -64,6 +107,7 @@ func run() error {
 		fmt.Println("Telegram registration polling started; full release still in development")
 		b.Start(poll)
 		stop()
+		<-cleanupDone
 		return <-workerDone
 	case "check":
 		if cfg.BotToken == "" {
@@ -98,7 +142,7 @@ func run() error {
 		fmt.Printf("Owner invitation (7 days): /start %s\n", token)
 		return nil
 	default:
-		return fmt.Errorf("commands: check, migrate, bootstrap, serve")
+		return fmt.Errorf("commands: check, check-ai, check-ai-flow, migrate, bootstrap, serve")
 	}
 }
 

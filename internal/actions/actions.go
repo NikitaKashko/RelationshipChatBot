@@ -7,7 +7,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/affection"
 	"io"
+	"strings"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/collection"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/feedback"
@@ -31,7 +33,19 @@ func decode(raw []byte, v any) error {
 }
 
 func validate(kind string, raw []byte) error {
+	if strings.HasPrefix(kind, "ai:") {
+		kind = strings.TrimPrefix(kind, "ai:")
+		switch kind {
+		case "place_create", "place_edit", "place_archive", "place_interest", "candidate", "plan_save", "plan_cancel", "plan_not_went", "visit_record", "review", "freeze", "preferences":
+		default:
+			return store.ErrDenied
+		}
+	}
 	switch kind {
+	case "preferences":
+		return decode(raw, new(store.Preferences))
+	case "notification_names":
+		return decode(raw, new(affection.Names))
 	case "visit_record":
 		return decode(raw, new(feedback.Visit))
 	case "visit_correct":
@@ -93,6 +107,11 @@ func (s *Service) Prepare(ctx context.Context, actor int64, kind string, raw []b
 		return
 	}
 	err = s.Store.Write(ctx, func(q store.Query) error {
+		if strings.HasPrefix(kind, "ai:") {
+			if _, e := store.AIFor(ctx, q, actor); e != nil {
+				return e
+			}
+		}
 		if _, e := store.UserFor(ctx, q, actor, kind == "profile"); e != nil {
 			return e
 		}
@@ -104,11 +123,24 @@ func (s *Service) Prepare(ctx context.Context, actor int64, kind string, raw []b
 		if pair != 0 {
 			scope = pair
 		}
+		if strings.HasPrefix(kind, "ai:") {
+			// Repeated tool calls/explicit provider retries can reuse an identical
+			// pending proposal. They never create a second committed action.
+			var existing string
+			e = q.QueryRowContext(ctx, "SELECT id FROM drafts WHERE user_id=? AND coalesce(pair_id,0)=? AND kind=? AND payload=? AND applied_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1", actor, pair, kind, string(raw), s.Store.Now().Unix()).Scan(&existing)
+			if e == nil {
+				id = existing
+				return nil
+			}
+			if !errors.Is(e, sql.ErrNoRows) {
+				return e
+			}
+		}
 		id, e = identity.RandomToken()
 		if e != nil {
 			return e
 		}
-		if kind == "plan_save" {
+		if strings.TrimPrefix(kind, "ai:") == "plan_save" {
 			var p planning.Input
 			_ = decode(raw, &p)
 			plans := planning.Service{Store: s.Store}
@@ -138,6 +170,12 @@ func (s *Service) Apply(ctx context.Context, actor int64, id string) (result jso
 		}
 		if _, e = store.UserFor(ctx, q, actor, kind == "profile"); e != nil {
 			return e
+		}
+		if strings.HasPrefix(kind, "ai:") {
+			if _, e = store.AIFor(ctx, q, actor); e != nil {
+				return e
+			}
+			kind = strings.TrimPrefix(kind, "ai:")
 		}
 		// Completed callbacks are receipts, never new writes. Pair acceptance itself
 		// changes scope, so replay checks its resulting pair rather than old scope.
@@ -173,6 +211,22 @@ func (s *Service) Apply(ctx context.Context, actor int64, id string) (result jso
 		plans := planning.Service{Store: s.Store}
 		facts := feedback.Service{Store: s.Store}
 		switch kind {
+		case "preferences":
+			var p store.Preferences
+			_ = decode([]byte(raw), &p)
+			value, _ := json.Marshal(p)
+			if _, e = q.ExecContext(ctx, "UPDATE users SET preferences=? WHERE id=?", string(value), actor); e != nil {
+				return e
+			}
+			result = json.RawMessage(`{"saved":true}`)
+		case "notification_names":
+			var p affection.Names
+			_ = decode([]byte(raw), &p)
+			service := affection.Service{Store: s.Store}
+			if e = service.Names(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result = json.RawMessage(`{"saved":true}`)
 		case "visit_record":
 			var p feedback.Visit
 			_ = decode([]byte(raw), &p)
@@ -303,6 +357,11 @@ func (s *Service) Apply(ctx context.Context, actor int64, id string) (result jso
 			}
 			if _, e = q.ExecContext(ctx, `INSERT INTO consents(user_id,kind,enabled,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,kind) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at`, actor, p.Kind, p.Enabled, s.Store.Now().Unix()); e != nil {
 				return e
+			}
+			if p.Kind == "ai" && !p.Enabled {
+				if _, e = q.ExecContext(ctx, `UPDATE drafts SET expires_at=? WHERE applied_at IS NULL AND kind LIKE 'ai:%' AND (user_id=? OR pair_id=?)`, s.Store.Now().Unix(), actor, current); e != nil {
+					return e
+				}
 			}
 			result = json.RawMessage(`{"saved":true}`)
 		}

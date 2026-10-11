@@ -159,6 +159,9 @@ func (r *Router) collectionMessage(ctx context.Context, b *bot.Bot, m *models.Me
 	}
 	command := strings.Split(fields[0], "@")[0]
 	args := strings.TrimSpace(strings.TrimPrefix(text, fields[0]))
+	if r.affectionMessage(ctx, b, actor, command, args) {
+		return true
+	}
 	if r.feedbackMessage(ctx, b, actor, command, args) {
 		return true
 	}
