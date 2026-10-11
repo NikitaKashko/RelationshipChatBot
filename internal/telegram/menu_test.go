@@ -66,6 +66,7 @@ func TestEnabledAssistantSurvivesRestartAndMenuDoesNotAskAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	act.Store = db
 	router := Router{Store: db}
 	send := func(text string) {
 		router.Handle(ctx, b, &models.Update{Message: &models.Message{From: &models.User{ID: 1}, Chat: models.Chat{ID: 1, Type: models.ChatTypePrivate}, Text: text}})
@@ -119,6 +120,28 @@ func TestEnabledAssistantSurvivesRestartAndMenuDoesNotAskAgain(t *testing.T) {
 		t.Fatal("quiet hours not saved", start)
 	}
 	var n int
+	send("/places")
+	if !strings.Contains(strings.Join(bodies, "\n"), "➕ Добавить место") {
+		t.Fatal("empty collection hides add")
+	}
+	db.DB.ExecContext(ctx, "UPDATE consents SET enabled=0 WHERE user_id=1 AND kind='ai'")
+	// Manual entry never needs either partner's AI consent.
+	send("/add_manual")
+	send("Пикник")
+	send("Погулять")
+	send("/skip")
+	send("/skip")
+	var cardDraft string
+	if err = db.DB.QueryRowContext(ctx, "SELECT id FROM drafts WHERE user_id=1 AND kind='place_create' AND applied_at IS NULL").Scan(&cardDraft); err != nil {
+		t.Fatal("manual form did not prepare card", err)
+	}
+	if err = db.DB.QueryRowContext(ctx, "SELECT count(*) FROM places").Scan(&n); err != nil || n != 0 {
+		t.Fatal("manual form saved without confirmation")
+	}
+	if _, err = act.Apply(ctx, 1, cardDraft); err != nil {
+		t.Fatal(err)
+	}
+	db.DB.ExecContext(ctx, "UPDATE consents SET enabled=1 WHERE user_id=1 AND kind='ai'")
 	if err = db.DB.QueryRowContext(ctx, "SELECT count(*) FROM drafts WHERE kind='consent' AND applied_at IS NULL").Scan(&n); err != nil || n != 0 {
 		t.Fatal("repeat consent drafts", n, err)
 	}
@@ -140,7 +163,7 @@ func TestAssistantStatusExplainsMissingPartnerConsent(t *testing.T) {
 	}
 	r := Router{Store: db}
 	enabled, status, err := r.aiStatus(ctx, 1)
-	if err != nil || !enabled || !strings.Contains(status, "партнёру тоже нужно") {
+	if err != nil || !enabled || !strings.Contains(status, "пока партнёр не включит") {
 		t.Fatal(enabled, status, err)
 	}
 	_, err = db.DB.ExecContext(ctx, "INSERT INTO consents(user_id,kind,enabled,updated_at) VALUES(2,'ai',1,1)")
@@ -148,7 +171,7 @@ func TestAssistantStatusExplainsMissingPartnerConsent(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, status, err = r.aiStatus(ctx, 1)
-	if err != nil || strings.Contains(status, "партнёру тоже нужно") {
+	if err != nil || strings.Contains(status, "пока партнёр не включит") {
 		t.Fatal(status, err)
 	}
 }

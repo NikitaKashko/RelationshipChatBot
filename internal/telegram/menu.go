@@ -53,7 +53,7 @@ func (r *Router) aiStatus(ctx context.Context, actor int64) (bool, string, error
 			return false, "", err
 		}
 		if other != 1 {
-			status += "\nДля общей копилки партнёру тоже нужно включить помощника."
+			status += "\nЛичный ИИ и поиск новых мест доступны. Подбор из общей копилки скрыт, пока партнёр не включит ИИ. Копилка вручную доступна всегда."
 		}
 	}
 	return true, status, nil
@@ -76,7 +76,7 @@ func (r *Router) showMenu(ctx context.Context, b *bot.Bot, actor int64, paired b
 	r.send(ctx, b, actor, fmt.Sprintf("%s\n%s\n\nВыбирай действие кнопками ниже или пиши помощнику обычным текстом.", title, status), mainKeyboard(u.Role == "owner"))
 }
 func (r *Router) menuCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) bool {
-	commands := map[string]string{"ai": "/ai", "ai_off": "/ai_off", "newchat": "/newchat", "clearchat": "/clearchat", "start": "/start", "invite": "/invite", "cancelinvite": "/cancelinvite", "location": "/location", "names": "/names", "candidates": "/candidates", "accessinvite": "/accessinvite", "quiet": "/quiet", "quiet_custom": "/quiet_custom", "quiet_cancel": "/quiet_cancel", "quiet_default": "/quiet 23:00-09:00", "quiet_late": "/quiet 00:00-10:00", "quiet_off": "/quiet 00:00-00:00"}
+	commands := map[string]string{"ai": "/ai", "ai_off": "/ai_off", "newchat": "/newchat", "clearchat": "/clearchat", "start": "/start", "invite": "/invite", "cancelinvite": "/cancelinvite", "location": "/location", "names": "/names", "candidates": "/drafts", "drafts": "/drafts", "add": "/add", "add_manual": "/add_manual", "add_ai": "/add_ai", "draft_new": "/draft_new", "plan_new": "/plan_new", "date_ai": "/date_ai", "skip": "/skip", "entry_cancel": "/entry_cancel", "accessinvite": "/accessinvite", "quiet": "/quiet", "quiet_custom": "/quiet_custom", "quiet_cancel": "/quiet_cancel", "quiet_default": "/quiet 23:00-09:00", "quiet_late": "/quiet 00:00-10:00", "quiet_off": "/quiet 00:00-00:00"}
 	if len(q.Data) < 5 || q.Data[:5] != "menu:" {
 		return false
 	}

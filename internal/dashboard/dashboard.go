@@ -202,7 +202,7 @@ func (p *Panel) aggregate(ctx context.Context, d *Page) error {
 		d.Health = "Процесс бота работает · сигнал менее 40 секунд назад"
 	}
 	metrics := []struct{ label, query string }{
-		{"Пользователи", "SELECT count(*) FROM users WHERE status<>'deleted'"}, {"Пары", "SELECT count(*) FROM pairs WHERE status='active'"}, {"Идеи", "SELECT count(*) FROM places WHERE archived=0"}, {"Свидания", "SELECT count(*) FROM plans"}, {"В очереди", "SELECT count(*) FROM notifications WHERE status IN ('pending','sending')"}, {"Ошибки доставки", "SELECT count(*) FROM notifications WHERE status IN ('failed','uncertain')"}, {"Неполный usage", "SELECT count(*) FROM api_usage WHERE uncertain=1"},
+		{"Пользователи", "SELECT count(*) FROM users WHERE status<>'deleted'"}, {"Пары", "SELECT count(*) FROM pairs WHERE status='active'"}, {"Идеи", "SELECT count(*) FROM places WHERE archived=0"}, {"Свидания", "SELECT count(*) FROM plans WHERE is_draft=0"}, {"Черновики", "SELECT count(*) FROM plans WHERE is_draft=1"}, {"В очереди", "SELECT count(*) FROM notifications WHERE status IN ('pending','sending')"}, {"Ошибки доставки", "SELECT count(*) FROM notifications WHERE status IN ('failed','uncertain')"}, {"Неполный usage", "SELECT count(*) FROM api_usage WHERE uncertain=1"},
 	}
 	for _, m := range metrics {
 		v := 0

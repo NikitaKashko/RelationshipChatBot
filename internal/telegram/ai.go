@@ -35,13 +35,14 @@ func (r *Router) aiResult(ctx context.Context, b *bot.Bot, actor int64, result a
 		}
 	}
 	for _, draft := range result.Drafts {
-		r.send(ctx, b, actor, draft.Preview, button("Сохранить", "save:"+draft.ID))
+		label := "Сохранить"
+		if strings.Contains(draft.Preview, "Черновик") {
+			label = "📝 Сохранить черновик"
+		}
+		r.send(ctx, b, actor, draft.Preview, button(label, "save:"+draft.ID))
 	}
 	for _, card := range result.SearchCards {
-		rows := [][]models.InlineKeyboardButton{{{Text: "В идеи", CallbackData: "save:" + card.Ideas}}}
-		if card.Candidates != "" {
-			rows[0] = append(rows[0], models.InlineKeyboardButton{Text: "В кандидаты свидания", CallbackData: "save:" + card.Candidates})
-		}
+		rows := [][]models.InlineKeyboardButton{{{Text: "Добавить в копилку", CallbackData: "save:" + card.Ideas}}}
 		r.send(ctx, b, actor, card.Preview, models.InlineKeyboardMarkup{InlineKeyboard: rows})
 	}
 	if result.SearchButton != nil {

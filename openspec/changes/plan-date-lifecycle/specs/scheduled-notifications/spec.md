@@ -34,7 +34,7 @@ Each user SHALL have personal quiet hours defaulting to 23:00–09:00 in their t
 - **THEN** the bot shows their current interval and timezone, offers presets, custom HH:MM input and disabling, saves only after confirmation, and re-evaluates quiet-deferred pending events without bringing future scheduled reminders forward.
 
 ### Requirement: Reminder and timezone changes
-The system SHALL offer one disableable reminder two hours before plan start. Changing the approved pair timezone SHALL recompute future feedback schedules without changing the actual instants of saved plans.
+The system SHALL offer one disableable reminder two hours before an explicit start, or at 10:00 on the approved date when no start time is given. Feedback SHALL be scheduled at 12:00 the day after the date if no end time is given, or the day after the explicit end. Date-only reminders SHALL expire at the end of that date; timed reminders before the explicit start. Changing the approved pair timezone SHALL recompute future feedback schedules without changing the actual instants of saved plans.
 
 #### Scenario: Reminder deferred too far
 - **WHEN** quiet hours end only after the date starts

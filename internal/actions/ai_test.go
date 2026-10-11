@@ -338,7 +338,7 @@ func TestPersonalChatWithoutPartnerConsentDoesNotExposeSharedData(t *testing.T) 
 	s.Provider = fakeProvider(func(_ context.Context, m []ai.Message, tools []any) (ai.Completion, error) {
 		calls++
 		raw, _ := json.Marshal(m)
-		if strings.Contains(string(raw), "SECRET_PARTNER_PLACE") || len(tools) != 0 {
+		if strings.Contains(string(raw), "SECRET_PARTNER_PLACE") || len(tools) != 2 {
 			t.Fatal("shared context or tools exposed")
 		}
 		return answer("Привет"), nil

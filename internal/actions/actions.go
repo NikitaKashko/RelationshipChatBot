@@ -20,6 +20,38 @@ import (
 
 type Service struct{ Store *store.Store }
 
+func aiPermission(ctx context.Context, q store.Query, actor int64, kind string, raw []byte) error {
+	if _, err := store.AIFor(ctx, q, actor); err == nil {
+		return nil
+	} else if !errors.Is(err, store.ErrDenied) {
+		return err
+	}
+	if _, err := store.AIConversationFor(ctx, q, actor); err != nil {
+		return err
+	}
+	switch strings.TrimPrefix(kind, "ai:") {
+	case "place_create", "preferences":
+		return nil
+	case "search_save":
+		var p collection.SearchSave
+		if err := decode(raw, &p); err != nil {
+			return err
+		}
+		if !p.Candidate {
+			return nil
+		}
+	case "plan_save":
+		var p planning.Input
+		if err := decode(raw, &p); err != nil {
+			return err
+		}
+		if p.Draft && p.ID == 0 && len(p.Places) == 0 {
+			return nil
+		}
+	}
+	return store.ErrDenied
+}
+
 func decode(raw []byte, v any) error {
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
@@ -36,7 +68,7 @@ func validate(kind string, raw []byte) error {
 	if strings.HasPrefix(kind, "ai:") {
 		kind = strings.TrimPrefix(kind, "ai:")
 		switch kind {
-		case "search_save", "place_create", "place_edit", "place_archive", "place_interest", "candidate", "plan_save", "plan_cancel", "plan_not_went", "visit_record", "review", "freeze", "preferences":
+		case "search_save", "place_create", "place_edit", "place_archive", "place_interest", "plan_save", "plan_cancel", "plan_not_went", "visit_record", "review", "freeze", "preferences":
 		default:
 			return store.ErrDenied
 		}
@@ -120,7 +152,7 @@ func (s *Service) Prepare(ctx context.Context, actor int64, kind string, raw []b
 	}
 	err = s.Store.Write(ctx, func(q store.Query) error {
 		if strings.HasPrefix(kind, "ai:") {
-			if _, e := store.AIFor(ctx, q, actor); e != nil {
+			if e := aiPermission(ctx, q, actor, kind, raw); e != nil {
 				return e
 			}
 		}
@@ -184,7 +216,7 @@ func (s *Service) Apply(ctx context.Context, actor int64, id string) (result jso
 			return e
 		}
 		if strings.HasPrefix(kind, "ai:") {
-			if _, e = store.AIFor(ctx, q, actor); e != nil {
+			if e = aiPermission(ctx, q, actor, kind, []byte(raw)); e != nil {
 				return e
 			}
 			kind = strings.TrimPrefix(kind, "ai:")

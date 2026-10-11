@@ -1,25 +1,25 @@
 ## Purpose
 
-Превращать общие идеи в кандидатов и сохранённые планы свиданий, позволяя обоим партнёрам менять планы без потери чужих изменений.
+Превращать общую коллекцию в черновики и утверждённые свидания, позволяя обоим партнёрам менять планы без потери чужих изменений.
 
 ## ADDED Requirements
 
-### Requirement: Candidates and plans
-The system SHALL keep one shared next-date candidate list, several scheduled plans and past-plan history. Both partners SHALL edit candidates silently. An AI shortlist SHALL enter candidates only through «Взять за основу» or equivalent explicit action.
+### Requirement: Date drafts and approved dates
+The system SHALL keep a shared collection, separate shared date drafts and approved dates with history. Drafts SHALL need a title or idea, but no places, route or date. AI proposals SHALL remain private until saving; saving creates a shared draft and one partner notification. Either partner SHALL edit shared drafts with version checks and one notification per saved change. Former candidates SHALL be migrated into a draft without losing places.
 
-#### Scenario: Internet candidate
-- **WHEN** a user accepts an internet result into candidates
-- **THEN** it is also saved in the collection, but does not become a scheduled or completed date.
+#### Scenario: New draft from an idea
+- **WHEN** a user saves a draft such as an evening at home
+- **THEN** it becomes a shared draft without automatic reminders or a visit.
 
 ### Requirement: Scheduled plan details
-A saved plan SHALL contain at least one place or activity, ordered steps, date and approximate start and end. Relative dates SHALL be displayed as exact dates and times before saving. Ideas and candidates SHALL not require scheduling.
+An approved date SHALL require a calendar date; places, route, start time and end time SHALL be optional. Either partner SHALL approve a draft without a second approval, with one notification to the other. Relative dates SHALL be displayed as exact calendar dates before saving.
 
 #### Scenario: After midnight
 - **WHEN** the end falls on the day after the start
 - **THEN** the preview clearly shows both calendar dates and validates that the end is after the start.
 
 ### Requirement: Saving and notification
-Either partner SHALL save or update plans without the other's approval. Saving SHALL produce one partner notification summarizing the plan and changed fields. Draft edits SHALL not notify; AI changes SHALL remain drafts until one explicit save action.
+Either partner SHALL save or update plans without the other's approval. Saving SHALL produce one partner notification summarizing the plan and changed fields. Unsaved edits SHALL not notify; saving a shared draft or approved date SHALL notify once. AI changes SHALL remain private proposals until one explicit save action.
 
 #### Scenario: Voice reschedule
 - **WHEN** a user says «перенеси на пятницу»

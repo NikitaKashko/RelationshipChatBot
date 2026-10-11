@@ -32,7 +32,10 @@ func (r *Router) NotificationSender(b *bot.Bot) notifications.Sender {
 		text := ""
 		switch m.Kind {
 		case "plan_saved":
-			text = "План обновлён: " + strings.Join(p.Changed, ", ") + "\n" + p.Summary
+			text = "Свидание сохранено: " + strings.Join(p.Changed, ", ") + "\n" + p.Summary
+			if strings.HasPrefix(p.Summary, "📝") {
+				text = "Партнёр сохранил черновик свидания 💛\n" + p.Summary
+			}
 		case "plan_cancelled":
 			text = "Свидание «" + p.Title + "» отменено. Идеи остаются в копилке."
 		case "plan_not_went":

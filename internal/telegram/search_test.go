@@ -106,7 +106,7 @@ func TestTelegramBareLinkAndAddLinkShowReviewedCards(t *testing.T) {
 		json.Unmarshal(msg["reply_markup"], &markup)
 		for _, row := range markup.InlineKeyboard {
 			for _, button := range row {
-				if button.Text == "В идеи" && strings.HasPrefix(button.CallbackData, "save:") {
+				if button.Text == "Добавить в копилку" && strings.HasPrefix(button.CallbackData, "save:") {
 					cardButtons++
 				}
 			}

@@ -57,27 +57,27 @@ func TestSearchRequiresCurrentHumanPermissionAndAtomicSave(t *testing.T) {
 		t.Fatal("not reviewed before save", err, calls)
 	}
 	card := result.SearchCards[0]
-	if card.Ideas == "" || card.Candidates == "" || !strings.Contains(card.Preview, "Источник:") || !strings.Contains(card.Preview, "не точная отметка") {
+	if card.Ideas == "" || card.Candidates != "" || !strings.Contains(card.Preview, "Источник:") || !strings.Contains(card.Preview, "не точная отметка") {
 		t.Fatal("missing buttons/sources/map fallback")
 	}
-	if _, err = d.act.Apply(d.ctx, 2, card.Candidates); !errors.Is(err, store.ErrDenied) {
+	if _, err = d.act.Apply(d.ctx, 2, card.Ideas); !errors.Is(err, store.ErrDenied) {
 		t.Fatal("partner committed private preview")
 	}
-	first, err := d.act.Apply(d.ctx, 1, card.Candidates)
+	first, err := d.act.Apply(d.ctx, 1, card.Ideas)
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := d.act.Apply(d.ctx, 1, card.Candidates)
+	again, err := d.act.Apply(d.ctx, 1, card.Ideas)
 	if err != nil || string(first) != string(again) {
 		t.Fatal("callback replay")
 	}
-	if d.count(t, "SELECT count(*) FROM places") != 1 || d.count(t, "SELECT count(*) FROM candidates") != 1 || d.count(t, "SELECT count(*) FROM plans") != 0 {
+	if d.count(t, "SELECT count(*) FROM places") != 1 || d.count(t, "SELECT count(*) FROM candidates") != 0 || d.count(t, "SELECT count(*) FROM plans") != 0 {
 		t.Fatal("non-atomic save/candidate or unsolicited plan")
 	}
 	if d.count(t, "SELECT count(*) FROM api_usage WHERE provider='deepseek_search' AND search_requests=2 AND uncertain=1 AND estimated_usd IS NOT NULL") != 1 {
 		t.Fatal("lost uncertain search costs")
 	}
-	if _, err = d.act.Apply(d.ctx, 1, card.Ideas); err == nil {
+	if _, err = d.act.Apply(d.ctx, 1, card.Ideas); err != nil {
 		t.Fatal("duplicate silently added")
 	}
 	// A previous explicit request must not grant a later unrelated turn web access.
@@ -203,5 +203,31 @@ func TestWebSearchCannotReintroduceFrozenOrArchivedDuplicate(t *testing.T) {
 	result, err = s.Converse(d.ctx, 1, "/search найди новые Кафе")
 	if err != nil || len(result.SearchCards) > 0 || len(result.Places) > 0 {
 		t.Fatal("archive silently recreated", err)
+	}
+}
+
+func TestPersonalSearchCanSaveNewCardWithoutPartnerConsent(t *testing.T) {
+	d := fixture(t)
+	d.apply(t, 1, "consent", map[string]any{"kind": "ai", "enabled": true})
+	s := ai.Service{Store: d.db, Model: "test"}
+	searchModel(&s)
+	calls := 0
+	s.Search = fakeSearch(func(_ context.Context, r ai.SearchRequest) (ai.SearchCompletion, error) {
+		calls++
+		return nativeFound(), nil
+	})
+	result, err := s.Converse(d.ctx, 1, "/search найди новые кафе")
+	if err != nil || calls != 1 || len(result.SearchCards) != 1 {
+		t.Fatal("personal search blocked", err, calls)
+	}
+	id := result.SearchCards[0].Ideas
+	if _, err = d.act.Apply(d.ctx, 1, id); err != nil {
+		t.Fatal("personal card save blocked", err)
+	}
+	if d.count(t, "SELECT count(*) FROM places WHERE pair_id IS NOT NULL") != 1 {
+		t.Fatal("card not shared")
+	}
+	if _, err = s.Select(d.ctx, 1, ai.Query{}); !errors.Is(err, store.ErrDenied) {
+		t.Fatal("shared selection exposed", err)
 	}
 }

@@ -28,12 +28,16 @@ func (s *Service) readContext(ctx context.Context, actor int64) (any, error) {
 		if err = s.Store.DB.QueryRowContext(ctx, "SELECT city,timezone FROM pairs WHERE id=?", pair).Scan(&c, &z); err != nil {
 			return nil, err
 		}
-		city = c.String
-		zone = z.String
+		if c.Valid && c.String != "" {
+			city = c.String
+		}
+		if z.Valid && z.String != "" {
+			zone = z.String
+		}
 	}
 	now := s.Store.Now().UTC().Format(time.RFC3339)
 	result := map[string]any{"now_utc": now, "city": city, "timezone": zone, "plans": []any{}, "visits": []any{}}
-	rows, err := s.Store.DB.QueryContext(ctx, "SELECT id,title,version,start_at,end_at,timezone,status FROM plans WHERE pair_id=? ORDER BY start_at DESC", pair)
+	rows, err := s.Store.DB.QueryContext(ctx, "SELECT id,title,version,start_at,end_at,timezone,status,is_draft,date_only,description,has_end FROM plans WHERE pair_id=? ORDER BY start_at DESC", pair)
 	if err != nil {
 		return nil, err
 	}
@@ -42,10 +46,24 @@ func (s *Service) readContext(ctx context.Context, actor int64) (any, error) {
 		var id, v int64
 		var title, tz, status string
 		var a, b float64
-		if err = rows.Scan(&id, &title, &v, &a, &b, &tz, &status); err != nil {
+		var draft, dateOnly, hasEnd bool
+		var description string
+		if err = rows.Scan(&id, &title, &v, &a, &b, &tz, &status, &draft, &dateOnly, &description, &hasEnd); err != nil {
 			break
 		}
-		plans = append(plans, map[string]any{"id": id, "title": title, "version": v, "start": time.Unix(int64(a), 0).UTC().Format(time.RFC3339), "end": time.Unix(int64(b), 0).UTC().Format(time.RFC3339), "timezone": tz, "status": status})
+		p := map[string]any{"id": id, "title": title, "version": v, "timezone": tz, "status": status, "draft": draft, "description": description}
+		if !draft || a != 0 {
+			if dateOnly {
+				loc, _ := time.LoadLocation(tz)
+				p["date"] = time.Unix(int64(a), 0).In(loc).Format("2006-01-02")
+			} else {
+				p["start"] = time.Unix(int64(a), 0).UTC().Format(time.RFC3339)
+				if hasEnd {
+					p["end"] = time.Unix(int64(b), 0).UTC().Format(time.RFC3339)
+				}
+			}
+		}
+		plans = append(plans, p)
 	}
 	if err == nil {
 		err = rows.Err()
@@ -177,7 +195,7 @@ func (s *Service) readContext(ctx context.Context, actor int64) (any, error) {
 }
 
 func (s *Service) preview(ctx context.Context, actor int64, kind string, raw json.RawMessage) (string, error) {
-	if _, err := store.AIFor(ctx, s.Store.DB, actor); err != nil {
+	if _, err := store.AIConversationFor(ctx, s.Store.DB, actor); err != nil {
 		return "", err
 	}
 	cards := collection.Service{Store: s.Store}

@@ -80,3 +80,41 @@ func TestUnknownSchemaIsNotOverwritten(t *testing.T) {
 		t.Fatal("unknown schema accepted")
 	}
 }
+
+func TestVersionOneCandidatesMigrateOnceToDraft(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "v1.sqlite")
+	old, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = old.Exec(schema); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = old.Exec(`INSERT INTO users(id,name,code,status,created_at) VALUES(1,'A','A','ready',1),(2,'B','B','ready',1);
+ INSERT INTO pairs(id,timezone,created_at) VALUES(1,'Europe/Moscow',1);
+ INSERT INTO pair_members(pair_id,user_id) VALUES(1,1),(1,2);
+ INSERT INTO places(id,pair_id,author_id,title,created_at) VALUES(10,1,1,'Park',1);
+ INSERT INTO candidates(pair_id,place_id,added_by,position) VALUES(1,10,1,0);
+ PRAGMA user_version=1;`); err != nil {
+		t.Fatal(err)
+	}
+	old.Close()
+	for i := 0; i < 2; i++ {
+		db, err := Open(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var n int
+		if err = db.DB.QueryRowContext(ctx, "SELECT count(*) FROM plans WHERE is_draft=1").Scan(&n); err != nil || n != 1 {
+			t.Fatal("migration lost/duplicated draft", err, n)
+		}
+		if err = db.DB.QueryRowContext(ctx, "SELECT count(*) FROM plan_items WHERE place_id=10").Scan(&n); err != nil || n != 1 {
+			t.Fatal("place lost", err, n)
+		}
+		if err = db.DB.QueryRowContext(ctx, "PRAGMA foreign_key_check").Scan(new(any), new(any), new(any), new(any)); err != sql.ErrNoRows {
+			t.Fatal("foreign key error", err)
+		}
+		db.DB.Close()
+	}
+}

@@ -26,7 +26,7 @@ Automatic suggestions SHALL default to the collection, prioritize mutual interes
 - **THEN** the bot offers next actions and does not silently unfreeze places or call internet search.
 
 ### Requirement: Explicit web search
-Internet search SHALL run only after an explicit request or search button. Results SHALL offer three to five grounded cards when enough results exist, explain relevance, show sources and unknown data, and provide ideas, candidates and more-results actions without automatic saving.
+Internet search SHALL run only after an explicit request or search button. Results SHALL offer three to five grounded cards when enough results exist, explain relevance, show sources and unknown data, and provide save-to-collection and more-results actions without automatic saving.
 
 #### Scenario: Fewer trustworthy results
 - **WHEN** search supports only two places
@@ -70,4 +70,4 @@ AI and search SHALL initially have no application request quotas or hard spendin
 
 #### Scenario: Personal chat while partner consent is missing
 - **WHEN** the caller has enabled AI but their active partner has not
-- **THEN** personal text chat and new conversation remain available, using only the caller's messages, personal city and timezone; shared tools, external search and writes are unavailable, and conversations containing shared pair context are not reused. Withdrawal of the caller's own consent blocks provider calls.
+- **THEN** personal text chat and new conversation remain available, using only the caller's messages, personal city and timezone; shared read/edit tools are unavailable, while explicit external search, new-card creation and confirmation-based saving into the shared collection remain available. A new date draft without existing place IDs may be proposed, and conversations containing shared pair context are not reused. Withdrawal of the caller's own consent blocks provider calls.

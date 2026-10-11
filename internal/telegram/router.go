@@ -137,7 +137,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 			}
 			return
 		}
-		if r.menuCallback(ctx, b, q) || r.aiCallback(ctx, b, q) || r.affectionCallback(ctx, b, q) || r.feedbackCallback(ctx, b, q) || r.collectionCallback(ctx, b, q) {
+		if r.entryCallback(ctx, b, q) || r.menuCallback(ctx, b, q) || r.aiCallback(ctx, b, q) || r.affectionCallback(ctx, b, q) || r.feedbackCallback(ctx, b, q) || r.collectionCallback(ctx, b, q) {
 			return
 		}
 		if !strings.HasPrefix(q.Data, "save:") {
@@ -191,7 +191,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 			return
 		}
 		if u.Status == "ready" {
-			if _, err := r.Store.DB.ExecContext(ctx, "DELETE FROM drafts WHERE user_id=? AND kind='ui_quiet'", actor); err != nil {
+			if _, err := r.Store.DB.ExecContext(ctx, "DELETE FROM drafts WHERE user_id=? AND kind IN ('ui_quiet','ui_entry')", actor); err != nil {
 				r.send(ctx, b, actor, publicError(err), nil)
 				return
 			}
@@ -234,8 +234,11 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 			return
 		}
 	}
+	if r.entryMessage(ctx, b, actor, text) {
+		return
+	}
 	if text == "/settings" {
-		markup := navButtons("🌙 Тихие часы", "quiet", "🤖 Помощник", "ai", "🌍 Город пары", "location", "💛 Имена для уведомлений", "names", "📋 Кандидаты свидания", "candidates", "🚫 Отменить приглашения партнёра", "cancelinvite", "🏠 Главное меню", "start")
+		markup := navButtons("🌙 Тихие часы", "quiet", "🤖 Помощник", "ai", "🌍 Город пары", "location", "💛 Имена для уведомлений", "names", "📝 Черновики свиданий", "candidates", "🚫 Отменить приглашения партнёра", "cancelinvite", "🏠 Главное меню", "start")
 		if u.Role == "owner" {
 			markup.InlineKeyboard = append([][]models.InlineKeyboardButton{{{Text: "🎟 Пригласить нового пользователя", CallbackData: "menu:accessinvite"}}}, markup.InlineKeyboard...)
 		}

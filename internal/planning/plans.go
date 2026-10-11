@@ -22,13 +22,16 @@ func (e *Stale) Error() string { return store.ErrConflict.Error() }
 func (e *Stale) Unwrap() error { return store.ErrConflict }
 
 type Input struct {
-	ID       int64   `json:"id,omitempty"`
-	Version  int64   `json:"version,omitempty"`
-	Title    string  `json:"title"`
-	Start    string  `json:"start"`
-	End      string  `json:"end"`
-	Timezone string  `json:"timezone"`
-	Places   []int64 `json:"places"`
+	Draft       bool    `json:"draft,omitempty"`
+	Date        string  `json:"date,omitempty"`
+	Description string  `json:"description,omitempty"`
+	ID          int64   `json:"id,omitempty"`
+	Version     int64   `json:"version,omitempty"`
+	Title       string  `json:"title"`
+	Start       string  `json:"start"`
+	End         string  `json:"end"`
+	Timezone    string  `json:"timezone"`
+	Places      []int64 `json:"places"`
 }
 type Candidate struct {
 	ID     int64 `json:"id"`
@@ -39,6 +42,9 @@ type Cancel struct {
 	Version int64 `json:"version"`
 }
 type Plan struct {
+	HasEnd                  bool
+	Draft, DateOnly         bool
+	Description             string
 	ID, Version, Pair       int64
 	Title, Timezone, Status string
 	Start, End              time.Time
@@ -65,6 +71,9 @@ func parse(raw string, loc *time.Location) (time.Time, error) {
 }
 
 func Dates(p Input) (time.Time, time.Time, error) {
+	if p.Draft && p.Date == "" && p.Start == "" {
+		return time.Unix(0, 0), time.Unix(1, 0), nil
+	}
 	if p.Timezone == "" || p.Timezone == "Local" {
 		return time.Time{}, time.Time{}, errors.New("укажи часовой пояс")
 	}
@@ -72,9 +81,24 @@ func Dates(p Input) (time.Time, time.Time, error) {
 	if err != nil {
 		return time.Time{}, time.Time{}, err
 	}
+	if p.Start == "" && p.Date != "" {
+		day, e := time.ParseInLocation("2006-01-02", p.Date, loc)
+		if e != nil || day.Format("2006-01-02") != p.Date {
+			return time.Time{}, time.Time{}, errors.New("укажи дату YYYY-MM-DD")
+		}
+		return day.Add(10 * time.Hour), day.Add(23*time.Hour + 59*time.Minute), nil
+	}
 	start, err := parse(p.Start, loc)
 	if err != nil {
 		return start, time.Time{}, err
+	}
+	if p.End == "" {
+		local := start.In(loc)
+		end := time.Date(local.Year(), local.Month(), local.Day(), 23, 59, 59, 0, loc)
+		if !end.After(start) {
+			end = start.Add(time.Second)
+		}
+		return start, end, nil
 	}
 	end, err := parse(p.End, loc)
 	if err != nil {
@@ -86,8 +110,8 @@ func Dates(p Input) (time.Time, time.Time, error) {
 	return start, end, nil
 }
 func Validate(p Input) error {
-	if strings.TrimSpace(p.Title) == "" || len([]rune(p.Title)) > 200 || len(p.Places) == 0 {
-		return errors.New("плану нужны название и места")
+	if strings.TrimSpace(p.Title) == "" || len([]rune(p.Title)) > 200 || len([]rune(p.Description)) > 3000 {
+		return errors.New("свиданию нужно название; описание до 3000 символов")
 	}
 	if p.ID != 0 && p.Version < 1 {
 		return errors.New("для изменения нужна версия плана")
@@ -128,7 +152,7 @@ func (s *Service) Get(ctx context.Context, q store.Query, actor, id int64) (Plan
 		return p, err
 	}
 	var start, end float64
-	err := q.QueryRowContext(ctx, "SELECT id,pair_id,version,title,start_at,end_at,timezone,status FROM plans WHERE id=?", id).Scan(&p.ID, &p.Pair, &p.Version, &p.Title, &start, &end, &p.Timezone, &p.Status)
+	err := q.QueryRowContext(ctx, "SELECT id,pair_id,version,title,start_at,end_at,timezone,status,is_draft,date_only,description,has_end FROM plans WHERE id=?", id).Scan(&p.ID, &p.Pair, &p.Version, &p.Title, &start, &end, &p.Timezone, &p.Status, &p.Draft, &p.DateOnly, &p.Description, &p.HasEnd)
 	if err != nil {
 		return p, err
 	}
@@ -168,7 +192,23 @@ func (s *Service) Preview(ctx context.Context, q store.Query, actor int64, p Inp
 	}
 	start, end, _ := Dates(p)
 	loc, _ := time.LoadLocation(p.Timezone)
+	if loc == nil {
+		loc = time.UTC
+	}
 	text := p.Title + "\nНачало: " + start.In(loc).Format("02.01.2006 15:04") + "\nОкончание: " + end.In(loc).Format("02.01.2006 15:04") + "\n" + p.Timezone
+	if p.Draft {
+		text = "📝 Черновик свидания: " + p.Title
+		if start.Unix() != 0 {
+			text += "\nПредварительная дата: " + start.In(loc).Format("02.01.2006")
+		}
+	} else if p.Start == "" {
+		text = p.Title + "\nДата: " + p.Date + "\nВремя не задано"
+	} else if p.End == "" {
+		text = p.Title + "\nНачало: " + start.In(loc).Format("02.01.2006 15:04") + "\nОкончание не задано"
+	}
+	if p.Description != "" {
+		text += "\n" + p.Description
+	}
 	c := collection.Service{Store: s.Store}
 	for i, id := range p.Places {
 		card, err := c.Get(ctx, q, actor, id)
@@ -189,6 +229,13 @@ func (s *Service) Preview(ctx context.Context, q store.Query, actor int64, p Inp
 	return text, nil
 }
 func (s *Service) Save(ctx context.Context, q store.Query, actor int64, p Input) (int64, error) {
+	if p.Draft && p.Timezone == "" {
+		u, err := store.UserFor(ctx, q, actor, false)
+		if err != nil {
+			return 0, err
+		}
+		p.Timezone = u.Timezone
+	}
 	if _, err := s.Preview(ctx, q, actor, p); err != nil {
 		return 0, err
 	}
@@ -201,7 +248,7 @@ func (s *Service) Save(ctx context.Context, q store.Query, actor int64, p Input)
 	if err = q.QueryRowContext(ctx, "SELECT timezone FROM pairs WHERE id=?", pair).Scan(&pairTimezone); err != nil {
 		return 0, err
 	}
-	if !pairTimezone.Valid {
+	if !pairTimezone.Valid && !p.Draft {
 		return 0, errors.New("сначала подтвердите часовой пояс пары")
 	}
 	changed := []string{"создан план"}
@@ -260,6 +307,9 @@ func (s *Service) Save(ctx context.Context, q store.Query, actor int64, p Input)
 			return 0, err
 		}
 	}
+	if _, err = q.ExecContext(ctx, "UPDATE plans SET is_draft=?,date_only=?,description=?,has_end=? WHERE id=?", p.Draft, p.Start == "" && p.Date != "", p.Description, p.End != "", id); err != nil {
+		return 0, err
+	}
 	c := collection.Service{Store: s.Store}
 	for i, place := range p.Places {
 		card, err := c.Get(ctx, q, actor, place)
@@ -285,8 +335,10 @@ func (s *Service) Save(ctx context.Context, q store.Query, actor int64, p Input)
 	if err = s.enqueue(ctx, q, pair, partner, "plan_saved", id, version, map[string]any{"summary": preview, "changed": changed}, s.Store.Now(), s.Store.Now().Add(48*time.Hour)); err != nil {
 		return 0, err
 	}
-	if err = s.schedule(ctx, q, pair, id, version, start, end, pairTimezone.String); err != nil {
-		return 0, err
+	if !p.Draft {
+		if err = s.schedule(ctx, q, pair, id, version, start, end, pairTimezone.String); err != nil {
+			return 0, err
+		}
 	}
 	return id, nil
 }
@@ -340,8 +392,18 @@ func (s *Service) schedule(ctx context.Context, q store.Query, pair, id, version
 		return err
 	}
 	for _, m := range members {
+		var dateOnly bool
+		if err = q.QueryRowContext(ctx, "SELECT date_only FROM plans WHERE id=?", id).Scan(&dateOnly); err != nil {
+			return err
+		}
+		remindAt := start.Add(-2 * time.Hour)
+		expires := start
+		if dateOnly {
+			remindAt = start
+			expires = end
+		}
 		if m.reminder && start.After(s.Store.Now()) {
-			if err = s.enqueue(ctx, q, pair, m.id, "reminder", id, version, map[string]any{"start_at": start.Unix()}, start.Add(-2*time.Hour), start); err != nil {
+			if err = s.enqueue(ctx, q, pair, m.id, "reminder", id, version, map[string]any{"start_at": start.Unix()}, remindAt, expires); err != nil {
 				return err
 			}
 		}

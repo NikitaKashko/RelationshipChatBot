@@ -140,7 +140,7 @@ func (w *Worker) next(ctx context.Context) (*Message, error) {
 				var status string
 				var version int64
 				var start float64
-				err = q.QueryRowContext(ctx, "SELECT status,version,start_at FROM plans WHERE id=? AND pair_id=?", payload.Plan, m.Pair).Scan(&status, &version, &start)
+				err = q.QueryRowContext(ctx, "SELECT status,version,CASE WHEN date_only=1 THEN end_at ELSE start_at END FROM plans WHERE id=? AND pair_id=?", payload.Plan, m.Pair).Scan(&status, &version, &start)
 				if err != nil && !errors.Is(err, sql.ErrNoRows) {
 					return err
 				}

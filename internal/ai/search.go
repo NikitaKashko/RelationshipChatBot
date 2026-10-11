@@ -152,10 +152,17 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 	}
 	if p.City == "" {
 		data, err := s.readContext(ctx, actor)
-		if err != nil {
+		if errors.Is(err, store.ErrDenied) {
+			user, e := store.UserFor(ctx, s.Store.DB, actor, false)
+			if e != nil {
+				return nil, e
+			}
+			p.City = user.City
+		} else if err != nil {
 			return nil, err
+		} else {
+			p.City, _ = data.(map[string]any)["city"].(string)
 		}
-		p.City, _ = data.(map[string]any)["city"].(string)
 	}
 	if p.City == "" && len(links.FindAllString(turn.text, -1)) == 0 {
 		return map[string]string{"status": "city_needed", "message": "Уточни город поиска. Профиль не меняется."}, nil
@@ -217,7 +224,7 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 		if err != nil {
 			return nil, err
 		}
-		if match != nil {
+		if match != nil && turn.pair != 0 {
 			if p.Mode == "discover" && !collection.AutomaticEligible(*match, float64(s.Store.Now().Unix())) {
 				excluded++
 				continue
@@ -252,13 +259,6 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 			return nil, err
 		}
 		candidate := ""
-		if turn.pair != 0 {
-			raw, _ = json.Marshal(collection.SearchSave{Card: card, Candidate: true})
-			candidate, err = svc.Prepare(ctx, actor, "ai:search_save", raw)
-			if err != nil {
-				return nil, err
-			}
-		}
 		prepared = append(prepared, SearchCard{Preview: preview, Ideas: idea, Candidates: candidate})
 		metadata = append(metadata, map[string]any{"title": card.Title, "address": card.Address, "city": card.City, "price": card.Price, "price_basis": card.PriceBasis, "unknown": place.Unknown})
 	}

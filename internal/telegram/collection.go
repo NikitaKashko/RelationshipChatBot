@@ -31,6 +31,9 @@ func (r *Router) draft(ctx context.Context, b *bot.Bot, actor int64, kind string
 		return
 	}
 	label := "Сохранить"
+	if plan, ok := p.(planning.Input); ok && plan.Draft {
+		label = "📝 Сохранить черновик"
+	}
 	if kind == "consent" {
 		if consent, ok := p.(map[string]any); ok && consent["kind"] == "ai" {
 			if consent["enabled"] == true {
@@ -55,7 +58,7 @@ func (r *Router) card(ctx context.Context, b *bot.Bot, actor, id int64) {
 	if c.Archived {
 		archiveText = "Вернуть из архива"
 	}
-	rows := [][]models.InlineKeyboardButton{{{Text: "Хочу сходить", CallbackData: "want:" + key}, {Text: "Не интересно", CallbackData: "uninterested:" + key}}, {{Text: "В кандидаты", CallbackData: "candidate:" + key}, {Text: archiveText, CallbackData: "archive:" + key}}}
+	rows := [][]models.InlineKeyboardButton{{{Text: "Хочу сходить", CallbackData: "want:" + key}, {Text: "Не интересно", CallbackData: "uninterested:" + key}}, {{Text: "Создать черновик", CallbackData: "candidate:" + key}, {Text: archiveText, CallbackData: "archive:" + key}}}
 	if len(c.Photos) > 0 {
 		_, _ = b.SendPhoto(ctx, &bot.SendPhotoParams{ChatID: actor, Photo: &models.InputFileString{Data: c.Photos[0]}, Caption: c.Title})
 		if len(c.Photos) > 1 {
@@ -97,7 +100,8 @@ func (r *Router) collectionCallback(ctx context.Context, b *bot.Bot, q *models.C
 		return true
 	}
 	if kind == "candidate" {
-		r.draft(ctx, b, q.From.ID, "candidate", planning.Candidate{ID: id}, "Добавить «"+c.Title+"» в кандидаты ближайшего свидания? Это ещё не согласованный план.")
+		u, _ := store.UserFor(ctx, r.Store.DB, q.From.ID, false)
+		r.draft(ctx, b, q.From.ID, "plan_save", planning.Input{Draft: true, Title: c.Title, Timezone: u.Timezone, Places: []int64{id}}, "Создать черновик свидания: "+c.Title+"? Дату можно назначить позже.")
 		return true
 	}
 	interest := "want"
@@ -153,10 +157,24 @@ func (r *Router) saved(ctx context.Context, b *bot.Bot, actor int64, result json
 		}
 		status := map[string]string{"planned": "Запланировано", "cancelled": "Отменено", "visited": "Посетили", "not_went": "Не пошли"}[p.Status]
 		text := fmt.Sprintf("План #%d · %s\n%s — %s\nСтатус: %s", p.ID, p.Title, p.Start.In(loc).Format("02.01.2006 15:04"), p.End.In(loc).Format("02.01.2006 15:04"), status)
+		if p.Draft {
+			text = fmt.Sprintf("📝 Черновик #%d · %s", p.ID, p.Title)
+			if p.Start.Unix() != 0 {
+				text += "\nПредварительная дата: " + p.Start.In(loc).Format("02.01.2006")
+			}
+		} else if p.DateOnly {
+			text = fmt.Sprintf("📅 Свидание #%d · %s\nДата: %s\nВремя не задано\nСтатус: %s", p.ID, p.Title, p.Start.In(loc).Format("02.01.2006"), status)
+		}
+		if !p.Draft && !p.DateOnly && !p.HasEnd {
+			text = fmt.Sprintf("📅 Свидание #%d · %s\nНачало: %s\nОкончание не задано\nСтатус: %s", p.ID, p.Title, p.Start.In(loc).Format("02.01.2006 15:04"), status)
+		}
+		if p.Description != "" {
+			text += "\n" + p.Description
+		}
 		for i, c := range p.Items {
 			text += fmt.Sprintf("\n%d. %s", i+1, c.Title)
 		}
-		r.send(ctx, b, actor, text, nil)
+		r.send(ctx, b, actor, text, r.planButtons(p))
 		return
 	}
 	r.home(ctx, b, actor)
@@ -182,15 +200,15 @@ func (r *Router) collectionMessage(ctx context.Context, b *bot.Bot, m *models.Me
 	}
 	cards := collection.Service{Store: r.Store}
 	switch command {
-	case "/plans", "/candidates":
+	case "/plans", "/candidates", "/drafts":
 		pair, err := store.PairFor(ctx, r.Store.DB, actor)
 		if err != nil || pair == 0 {
 			r.send(ctx, b, actor, "Этот список доступен после создания пары.", nil)
 			return true
 		}
-		query := "SELECT id FROM plans WHERE pair_id=? ORDER BY start_at DESC"
-		if command == "/candidates" {
-			query = "SELECT place_id FROM candidates WHERE pair_id=? ORDER BY position"
+		query := "SELECT id FROM plans WHERE pair_id=? AND is_draft=0 ORDER BY start_at DESC"
+		if command == "/candidates" || command == "/drafts" {
+			query = "SELECT id FROM plans WHERE pair_id=? AND is_draft=1 AND status='planned' ORDER BY id DESC"
 		}
 		rows, err := r.Store.DB.QueryContext(ctx, query, pair)
 		if err != nil {
@@ -213,6 +231,7 @@ func (r *Router) collectionMessage(ctx context.Context, b *bot.Bot, m *models.Me
 			r.send(ctx, b, actor, publicError(err), nil)
 			return true
 		}
+		r.send(ctx, b, actor, "Свидания 💛", r.dateButtons(ctx, actor))
 		page := 0
 		if len(fields) > 1 {
 			page, _ = strconv.Atoi(fields[1])
@@ -229,9 +248,7 @@ func (r *Router) collectionMessage(ctx context.Context, b *bot.Bot, m *models.Me
 			end = len(ids)
 		}
 		for _, id := range ids[page*5 : end] {
-			if command == "/candidates" {
-				r.card(ctx, b, actor, id)
-			} else {
+			{
 				raw, _ := json.Marshal(map[string]int64{"plan": id})
 				r.saved(ctx, b, actor, raw)
 			}
@@ -241,17 +258,7 @@ func (r *Router) collectionMessage(ctx context.Context, b *bot.Bot, m *models.Me
 		}
 		return true
 	case "/uncandidate":
-		id, err := strconv.ParseInt(args, 10, 64)
-		if err != nil {
-			r.send(ctx, b, actor, "Укажи /uncandidate номер_места.", nil)
-			return true
-		}
-		c, err := cards.Get(ctx, r.Store.DB, actor, id)
-		if err != nil {
-			r.send(ctx, b, actor, publicError(err), nil)
-			return true
-		}
-		r.draft(ctx, b, actor, "candidate", planning.Candidate{ID: id, Remove: true}, "Убрать «"+c.Title+"» из кандидатов? В копилке место останется.")
+		r.send(ctx, b, actor, "Кандидатов больше нет. Используй отдельные черновики свиданий.", r.dateButtons(ctx, actor))
 		return true
 	case "/location":
 		parts := strings.Split(args, "|")
@@ -264,12 +271,13 @@ func (r *Router) collectionMessage(ctx context.Context, b *bot.Bot, m *models.Me
 		return true
 	case "/add":
 		if args == "" {
-			r.send(ctx, b, actor, "Пришли /add название. Можно подробнее: /add название | категории через запятую | адрес | ссылка на Яндекс Карты\nСтартовые категории: "+strings.Join(collection.Starters, ", ")+". Можно указать свои.", nil)
+			r.addOptions(ctx, b, actor)
 			return true
 		}
 		// Keep the explicit pipe form as the manual alternative; a link or free
 		// description goes through AI identification and a reviewed search card.
-		if !strings.Contains(args, "|") && r.AI != nil && r.AI.Provider != nil {
+		enabled, _, _ := r.aiStatus(ctx, actor)
+		if enabled && !strings.Contains(args, "|") && r.AI != nil && r.AI.Provider != nil {
 			r.aiMessage(ctx, b, actor, "Хочу добавить место: "+args)
 			return true
 		}
@@ -314,18 +322,19 @@ func (r *Router) collectionMessage(ctx context.Context, b *bot.Bot, m *models.Me
 			return true
 		}
 		if page > len(list)/5 {
-			r.send(ctx, b, actor, "В этом списке пока нет мест.", nil)
+			r.send(ctx, b, actor, "В этом списке пока нет мест.", navButtons("➕ Добавить место", "add"))
 			return true
 		}
 		start := page * 5
 		if start >= len(list) {
-			r.send(ctx, b, actor, "В этом списке пока нет мест.", nil)
+			r.send(ctx, b, actor, "В этом списке пока нет мест.", navButtons("➕ Добавить место", "add"))
 			return true
 		}
 		end := start + 5
 		if end > len(list) {
 			end = len(list)
 		}
+		r.send(ctx, b, actor, "Копилка 💡", navButtons("➕ Добавить место", "add"))
 		for _, c := range list[start:end] {
 			r.card(ctx, b, actor, c.ID)
 		}

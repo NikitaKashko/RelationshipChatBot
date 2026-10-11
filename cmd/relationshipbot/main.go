@@ -232,7 +232,7 @@ func run() error {
 		}
 		defer db.DB.Close()
 		if command == "migrate" {
-			fmt.Println("SCHEMA_OK version=1")
+			fmt.Println("SCHEMA_OK version=2")
 			return nil
 		}
 		ids := identity.Service{Store: db}

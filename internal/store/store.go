@@ -83,8 +83,33 @@ func (s *Store) migrate(ctx context.Context, path string) error {
 	if err := s.DB.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version == 1 {
+	if version == 2 {
 		return nil
+	}
+	if version == 1 {
+		return s.Write(ctx, func(q Query) error {
+			var current int
+			if err := q.QueryRowContext(ctx, "PRAGMA user_version").Scan(&current); err != nil {
+				return err
+			}
+			if current == 2 {
+				return nil
+			}
+			if current != 1 {
+				return errors.New("schema changed during migration")
+			}
+			_, err := q.ExecContext(ctx, `ALTER TABLE plans ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plans ADD COLUMN date_only INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE plans ADD COLUMN description TEXT NOT NULL DEFAULT '';
+ALTER TABLE plans ADD COLUMN has_end INTEGER NOT NULL DEFAULT 1;
+INSERT INTO plans(pair_id,author_id,title,start_at,end_at,timezone,created_at,is_draft)
+SELECT pair_id,min(added_by),'Идеи из прежних кандидатов',0,1,coalesce((SELECT timezone FROM pairs WHERE id=pair_id),'Europe/Moscow'),0,1 FROM candidates GROUP BY pair_id;
+INSERT INTO plan_items(plan_id,place_id,position,snapshot)
+SELECT p.id,c.place_id,c.position,json_object('id',c.place_id,'title',x.title,'address',x.address,'city',x.city,'map_url',x.map_url,'description',x.description,'categories',json('[]')) FROM candidates c JOIN plans p ON p.pair_id=c.pair_id AND p.is_draft=1 JOIN places x ON x.id=c.place_id;
+DELETE FROM candidates;
+PRAGMA user_version=2;`)
+			return err
+		})
 	}
 	if version != 0 {
 		return fmt.Errorf("unsupported schema version %d", version)
@@ -111,7 +136,7 @@ func (s *Store) migrate(ctx context.Context, path string) error {
 			return err
 		}
 	}
-	return s.Write(ctx, func(q Query) error {
+	err := s.Write(ctx, func(q Query) error {
 		if legacy {
 			for _, table := range []string{"users", "requests", "places", "likes", "cooldowns"} {
 				var exists int
@@ -136,6 +161,10 @@ func (s *Store) migrate(ctx context.Context, path string) error {
 		_, err := q.ExecContext(ctx, "PRAGMA user_version=1")
 		return err
 	})
+	if err != nil {
+		return err
+	}
+	return s.migrate(ctx, path)
 }
 
 func (s *Store) importLegacy(ctx context.Context, q Query) error {
