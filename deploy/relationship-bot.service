@@ -1,0 +1,22 @@
+[Unit]
+Description=Relationship Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=relationshipbot
+Group=relationshipbot
+WorkingDirectory=/opt/relationship-bot
+EnvironmentFile=/opt/relationship-bot/.env
+ExecStart=/opt/relationship-bot/.venv/bin/python -m app.bot
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/relationship-bot/data
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
