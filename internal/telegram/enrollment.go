@@ -17,7 +17,29 @@ import (
 type Enrollment struct{ Store *store.Store }
 
 var ErrAnswer = errors.New("Ответ должен содержать от 1 до 100 символов.")
-var ErrTimezone = errors.New("Укажи часовой пояс, например Europe/Moscow.")
+var ErrTimezone = errors.New("Не распознал часовой пояс. Для Москвы и Санкт-Петербурга напиши «Москва» или нажми «Московское время» после /start. Для другого региона можно указать, например, Asia/Yekaterinburg.")
+
+func normalizeTimezone(text string) (string, error) {
+	aliases := map[string]string{
+		"москва": "Europe/Moscow", "moscow": "Europe/Moscow", "moskow": "Europe/Moscow",
+		"europe/moscow": "Europe/Moscow", "europe/moskow": "Europe/Moscow",
+		"московское время": "Europe/Moscow", "санкт-петербург": "Europe/Moscow", "спб": "Europe/Moscow",
+		"калининград": "Europe/Kaliningrad", "екатеринбург": "Asia/Yekaterinburg",
+		"новосибирск": "Asia/Novosibirsk", "владивосток": "Asia/Vladivostok",
+		"utc": "UTC",
+	}
+	text = strings.TrimSpace(text)
+	if zone, ok := aliases[strings.ToLower(text)]; ok {
+		text = zone
+	}
+	if text == "Local" {
+		return "", ErrTimezone
+	}
+	if _, err := time.LoadLocation(text); err != nil {
+		return "", ErrTimezone
+	}
+	return text, nil
+}
 
 type Wizard struct {
 	Stage   string           `json:"stage"`
@@ -95,13 +117,11 @@ func (e *Enrollment) Input(ctx context.Context, actor int64, text string) (Wizar
 			}
 			w.Stage = "timezone"
 		case "timezone":
-			if text == "Local" {
-				return ErrTimezone
+			zone, err := normalizeTimezone(text)
+			if err != nil {
+				return err
 			}
-			if _, err = time.LoadLocation(text); err != nil {
-				return ErrTimezone
-			}
-			w.Profile.Timezone = text
+			w.Profile.Timezone = zone
 			w.Stage = "preview"
 		default:
 			return store.ErrConflict

@@ -58,7 +58,8 @@ func (r *Router) wizard(ctx context.Context, b *bot.Bot, actor int64, w Wizard) 
 	case "name":
 		text = "Как подписывать твои знаки внимания? Например, Никита или зайка. /skip — оставить имя из Telegram."
 	case "timezone":
-		text = "Укажи часовой пояс, например Europe/Moscow. Его проверим перед сохранением."
+		text = "В каком часовом поясе ты живёшь? Для Москвы и Санкт-Петербурга нажми кнопку ниже. Можно написать «Москва» или свой часовой пояс, например Asia/Yekaterinburg."
+		markup = button("Московское время · UTC+3", "timezone:moscow")
 	case "preview":
 		e := Enrollment{Store: r.Store}
 		draft, err := e.ProfileDraft(ctx, actor, w)
@@ -121,6 +122,19 @@ func (r *Router) home(ctx context.Context, b *bot.Bot, actor int64) {
 func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	if q := update.CallbackQuery; q != nil {
 		if q.Message.Message == nil || q.Message.Message.Chat.Type != models.ChatTypePrivate || q.Message.Message.Chat.ID != q.From.ID {
+			return
+		}
+		if q.Data == "timezone:moscow" {
+			w, err := (&Enrollment{Store: r.Store}).Input(ctx, q.From.ID, "Europe/Moscow")
+			_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID, ShowAlert: err != nil, Text: func() string {
+				if err != nil {
+					return publicError(err)
+				}
+				return "Московское время выбрано"
+			}()})
+			if err == nil {
+				r.wizard(ctx, b, q.From.ID, w)
+			}
 			return
 		}
 		if r.aiCallback(ctx, b, q) || r.affectionCallback(ctx, b, q) || r.feedbackCallback(ctx, b, q) || r.collectionCallback(ctx, b, q) {

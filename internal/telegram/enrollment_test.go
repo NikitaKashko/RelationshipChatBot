@@ -51,7 +51,7 @@ func TestEnrollmentSurvivesRestartAndRequiresConfirmation(t *testing.T) {
 	if _, err = e.Input(ctx, 1, "Wrong/Zone"); err == nil {
 		t.Fatal("invalid timezone accepted")
 	}
-	w, err = e.Input(ctx, 1, "Europe/Moscow")
+	w, err = e.Input(ctx, 1, "Москва")
 	if err != nil || w.Stage != "preview" {
 		t.Fatal(w, err)
 	}
@@ -72,6 +72,20 @@ func TestEnrollmentSurvivesRestartAndRequiresConfirmation(t *testing.T) {
 	}
 	if _, err = svc.Apply(ctx, 1, draft); err != nil {
 		t.Fatal("repeated save failed", err)
+	}
+}
+
+func TestTimezoneAliases(t *testing.T) {
+	for _, value := range []string{"Москва", "Moscow", "Europe/Moskow", "Europe/Moscow", "Санкт-Петербург", "  московское время  "} {
+		zone, err := normalizeTimezone(value)
+		if err != nil || zone != "Europe/Moscow" {
+			t.Errorf("%q: %q %v", value, zone, err)
+		}
+	}
+	for _, value := range []string{"Wrong/Zone", "Local", "неизвестный город"} {
+		if _, err := normalizeTimezone(value); err == nil {
+			t.Errorf("accepted %q", value)
+		}
 	}
 }
 
