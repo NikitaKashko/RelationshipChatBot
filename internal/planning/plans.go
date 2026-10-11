@@ -387,7 +387,7 @@ func (s *Service) RefreshFeedback(ctx context.Context, q store.Query, pair int64
 	if err != nil {
 		return err
 	}
-	rows, err := q.QueryContext(ctx, `SELECT n.id,p.end_at FROM notifications n JOIN plans p ON p.id=json_extract(n.payload,'$.plan_id') WHERE n.pair_id=? AND n.kind='feedback' AND n.status='pending' AND n.available_at>? AND p.status='planned'`, pair, s.Store.Now().Unix())
+	rows, err := q.QueryContext(ctx, `SELECT n.id,p.end_at FROM notifications n JOIN plans p ON p.id=json_extract(n.payload,'$.plan_id') WHERE n.pair_id=? AND n.kind='feedback' AND n.status='pending' AND n.available_at>? AND p.status IN ('planned','visited')`, pair, s.Store.Now().Unix())
 	if err != nil {
 		return err
 	}

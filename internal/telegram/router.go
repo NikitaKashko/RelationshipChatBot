@@ -121,7 +121,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		if q.Message.Message == nil || q.Message.Message.Chat.Type != models.ChatTypePrivate || q.Message.Message.Chat.ID != q.From.ID {
 			return
 		}
-		if r.collectionCallback(ctx, b, q) {
+		if r.feedbackCallback(ctx, b, q) || r.collectionCallback(ctx, b, q) {
 			return
 		}
 		if !strings.HasPrefix(q.Data, "save:") {

@@ -10,6 +10,7 @@ import (
 	"io"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/collection"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/feedback"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
@@ -31,6 +32,16 @@ func decode(raw []byte, v any) error {
 
 func validate(kind string, raw []byte) error {
 	switch kind {
+	case "visit_record":
+		return decode(raw, new(feedback.Visit))
+	case "visit_correct":
+		return decode(raw, new(feedback.Correction))
+	case "review":
+		return decode(raw, new(feedback.Review))
+	case "freeze":
+		return decode(raw, new(feedback.Freeze))
+	case "plan_not_went":
+		return decode(raw, new(planning.Cancel))
 	case "location_proposal":
 		return decode(raw, new(identity.Location))
 	case "location_confirm":
@@ -160,7 +171,44 @@ func (s *Service) Apply(ctx context.Context, actor int64, id string) (result jso
 		ids := identity.Service{Store: s.Store}
 		cards := collection.Service{Store: s.Store}
 		plans := planning.Service{Store: s.Store}
+		facts := feedback.Service{Store: s.Store}
 		switch kind {
+		case "visit_record":
+			var p feedback.Visit
+			_ = decode([]byte(raw), &p)
+			n, e := facts.Record(ctx, q, actor, p)
+			if e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"visit": n})
+		case "visit_correct":
+			var p feedback.Correction
+			_ = decode([]byte(raw), &p)
+			if e = facts.Correct(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result = json.RawMessage(`{"saved":true}`)
+		case "review":
+			var p feedback.Review
+			_ = decode([]byte(raw), &p)
+			if e = facts.Review(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"place": p.Place})
+		case "freeze":
+			var p feedback.Freeze
+			_ = decode([]byte(raw), &p)
+			if e = facts.Freeze(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"place": p.Place})
+		case "plan_not_went":
+			var p planning.Cancel
+			_ = decode([]byte(raw), &p)
+			if e = facts.NotWent(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"plan": p.ID})
 		case "location_proposal":
 			var p identity.Location
 			_ = decode([]byte(raw), &p)

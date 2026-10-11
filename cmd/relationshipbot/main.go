@@ -10,6 +10,7 @@ import (
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/config"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/notifications"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/telegram"
 	"github.com/go-telegram/bot"
@@ -48,9 +49,22 @@ func run() error {
 		r.Username = me.Username
 		poll, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
+		worker := notifications.Worker{Store: db, Send: r.NotificationSender(b)}
+		if err = worker.Recover(ctx); err != nil {
+			return fmt.Errorf("notification recovery failed")
+		}
+		workerDone := make(chan error, 1)
+		go func() {
+			e := worker.Run(poll)
+			workerDone <- e
+			if e != nil {
+				stop()
+			}
+		}()
 		fmt.Println("Telegram registration polling started; full release still in development")
 		b.Start(poll)
-		return nil
+		stop()
+		return <-workerDone
 	case "check":
 		if cfg.BotToken == "" {
 			return fmt.Errorf("BOT_TOKEN is missing")

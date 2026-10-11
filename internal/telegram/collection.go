@@ -113,8 +113,13 @@ func (r *Router) saved(ctx context.Context, b *bot.Bot, actor int64, result json
 	var out struct {
 		Place int64 `json:"place"`
 		Plan  int64 `json:"plan"`
+		Visit int64 `json:"visit"`
 	}
 	_ = json.Unmarshal(result, &out)
+	if out.Visit != 0 {
+		r.showVisit(ctx, b, actor, out.Visit)
+		return
+	}
 	if out.Place != 0 {
 		r.card(ctx, b, actor, out.Place)
 		return
@@ -154,6 +159,9 @@ func (r *Router) collectionMessage(ctx context.Context, b *bot.Bot, m *models.Me
 	}
 	command := strings.Split(fields[0], "@")[0]
 	args := strings.TrimSpace(strings.TrimPrefix(text, fields[0]))
+	if r.feedbackMessage(ctx, b, actor, command, args) {
+		return true
+	}
 	cards := collection.Service{Store: r.Store}
 	switch command {
 	case "/plans", "/candidates":
