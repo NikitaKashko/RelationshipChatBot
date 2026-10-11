@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/actions"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -24,6 +26,12 @@ func button(text, data string) models.InlineKeyboardMarkup {
 }
 func (r *Router) send(ctx context.Context, b *bot.Bot, actor int64, text string, markup any) {
 	// Never print raw Telegram transport errors: request URLs contain credentials.
+	chars := []rune(text)
+	for len(chars) > 2000 {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{ChatID: actor, Text: string(chars[:2000])})
+		chars = chars[2000:]
+	}
+	text = string(chars)
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{ChatID: actor, Text: text, ReplyMarkup: markup})
 }
 func publicError(err error) string {
@@ -34,7 +42,7 @@ func publicError(err error) string {
 		return "Это действие недоступно. Проверь приглашение и регистрацию."
 	}
 	if errors.Is(err, store.ErrConflict) {
-		return "Это подтверждение устарело. Открой /start заново."
+		return "Подтверждение устарело. Открой актуальную карточку или план и повтори изменение."
 	}
 	return "Не удалось выполнить действие. Попробуй ещё раз."
 }
@@ -74,7 +82,18 @@ func (r *Router) home(ctx context.Context, b *bot.Bot, actor int64) {
 		return
 	}
 	if pair != 0 {
-		r.send(ctx, b, actor, "Вы в паре 💛 Регистрация завершена. Остальные функции первого релиза ещё подключаются.", nil)
+		var proposedBy sql.NullInt64
+		var city, zone sql.NullString
+		var version int64
+		if err = r.Store.DB.QueryRowContext(ctx, "SELECT proposed_by,proposed_city,proposed_timezone,location_version FROM pairs WHERE id=?", pair).Scan(&proposedBy, &city, &zone, &version); err != nil {
+			r.send(ctx, b, actor, publicError(err), nil)
+			return
+		}
+		if proposedBy.Valid && proposedBy.Int64 != actor {
+			r.draft(ctx, b, actor, "location_confirm", identity.LocationConfirmation{Version: version}, "Подтвердить город пары: "+city.String+"\nЧасовой пояс: "+zone.String)
+			return
+		}
+		r.send(ctx, b, actor, "Вы в паре 💛\n/location город | Europe/Moscow — предложить город пары\n/places — копилка\n/add — добавить идею\n/plan — ручной план. ИИ и доставка уведомлений ещё подключаются.", nil)
 		return
 	}
 	e := Enrollment{Store: r.Store}
@@ -102,18 +121,29 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		if q.Message.Message == nil || q.Message.Message.Chat.Type != models.ChatTypePrivate || q.Message.Message.Chat.ID != q.From.ID {
 			return
 		}
+		if r.collectionCallback(ctx, b, q) {
+			return
+		}
 		if !strings.HasPrefix(q.Data, "save:") {
 			return
 		}
 		svc := actions.Service{Store: r.Store}
-		_, err := svc.Apply(ctx, q.From.ID, strings.TrimPrefix(q.Data, "save:"))
+		result, err := svc.Apply(ctx, q.From.ID, strings.TrimPrefix(q.Data, "save:"))
 		text := "Сохранено"
 		if err != nil {
 			text = publicError(err)
 		}
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID, Text: text, ShowAlert: err != nil})
 		if err == nil {
-			r.home(ctx, b, q.From.ID)
+			r.saved(ctx, b, q.From.ID, result)
+		} else {
+			r.duplicate(ctx, b, q.From.ID, err)
+			var stale *planning.Stale
+			if errors.As(err, &stale) {
+				r.send(ctx, b, q.From.ID, "План уже изменился. Вот актуальная версия — подготовь правку заново.", nil)
+				raw, _ := json.Marshal(map[string]int64{"plan": stale.ID})
+				r.saved(ctx, b, q.From.ID, raw)
+			}
 		}
 		return
 	}
@@ -179,6 +209,9 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 			return
 		}
 		r.send(ctx, b, actor, "Пригласи партнёра: https://t.me/"+r.Username+"?start="+token+"\nСсылка одноразовая, действует 7 дней. Получатель подтвердит создание пары.", nil)
+		return
+	}
+	if r.collectionMessage(ctx, b, m) {
 		return
 	}
 	r.send(ctx, b, actor, "Регистрация готова. /start — профиль и приглашение в пару. Остальные функции пока в разработке.", nil)

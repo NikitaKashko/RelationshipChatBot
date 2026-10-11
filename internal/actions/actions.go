@@ -9,7 +9,9 @@ import (
 	"errors"
 	"io"
 
+	"github.com/NikitaKashko/RelationshipChatBot/internal/collection"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 )
 
@@ -29,6 +31,36 @@ func decode(raw []byte, v any) error {
 
 func validate(kind string, raw []byte) error {
 	switch kind {
+	case "location_proposal":
+		return decode(raw, new(identity.Location))
+	case "location_confirm":
+		return decode(raw, new(identity.LocationConfirmation))
+	case "place_create":
+		var p collection.Input
+		if err := decode(raw, &p); err != nil {
+			return err
+		}
+		return collection.Validate(p)
+	case "place_edit":
+		var p collection.Edit
+		if err := decode(raw, &p); err != nil {
+			return err
+		}
+		return collection.Validate(p.Card)
+	case "place_archive":
+		return decode(raw, new(collection.Archive))
+	case "place_interest":
+		return decode(raw, new(collection.Interest))
+	case "candidate":
+		return decode(raw, new(planning.Candidate))
+	case "plan_save":
+		var p planning.Input
+		if err := decode(raw, &p); err != nil {
+			return err
+		}
+		return planning.Validate(p)
+	case "plan_cancel":
+		return decode(raw, new(planning.Cancel))
 	case "profile":
 		return decode(raw, new(identity.Profile))
 	case "pair_accept":
@@ -64,6 +96,14 @@ func (s *Service) Prepare(ctx context.Context, actor int64, kind string, raw []b
 		id, e = identity.RandomToken()
 		if e != nil {
 			return e
+		}
+		if kind == "plan_save" {
+			var p planning.Input
+			_ = decode(raw, &p)
+			plans := planning.Service{Store: s.Store}
+			if _, e = plans.Preview(ctx, q, actor, p); e != nil {
+				return e
+			}
 		}
 		_, e = q.ExecContext(ctx, "INSERT INTO drafts(id,user_id,pair_id,kind,payload,created_at,expires_at) VALUES(?,?,?,?,?,?,?)", id, actor, scope, kind, string(raw), s.Store.Now().Unix(), s.Store.Now().Unix()+86400)
 		return e
@@ -118,7 +158,75 @@ func (s *Service) Apply(ctx context.Context, actor int64, id string) (result jso
 			return e
 		}
 		ids := identity.Service{Store: s.Store}
+		cards := collection.Service{Store: s.Store}
+		plans := planning.Service{Store: s.Store}
 		switch kind {
+		case "location_proposal":
+			var p identity.Location
+			_ = decode([]byte(raw), &p)
+			v, e := ids.ProposeLocation(ctx, q, actor, p)
+			if e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"location_version": v})
+		case "location_confirm":
+			var p identity.LocationConfirmation
+			_ = decode([]byte(raw), &p)
+			if e = ids.ConfirmLocation(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result = json.RawMessage(`{"saved":true}`)
+		case "place_create":
+			var p collection.Input
+			_ = decode([]byte(raw), &p)
+			n, e := cards.Create(ctx, q, actor, p)
+			if e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"place": n})
+		case "place_edit":
+			var p collection.Edit
+			_ = decode([]byte(raw), &p)
+			if e = cards.Edit(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"place": p.ID})
+		case "place_archive":
+			var p collection.Archive
+			_ = decode([]byte(raw), &p)
+			if e = cards.Archive(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"place": p.ID})
+		case "place_interest":
+			var p collection.Interest
+			_ = decode([]byte(raw), &p)
+			if e = cards.Interest(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"place": p.ID})
+		case "candidate":
+			var p planning.Candidate
+			_ = decode([]byte(raw), &p)
+			if e = plans.Candidate(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result = json.RawMessage(`{"saved":true}`)
+		case "plan_save":
+			var p planning.Input
+			_ = decode([]byte(raw), &p)
+			n, e := plans.Save(ctx, q, actor, p)
+			if e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"plan": n})
+		case "plan_cancel":
+			var p planning.Cancel
+			_ = decode([]byte(raw), &p)
+			if e = plans.Cancel(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"plan": p.ID})
 		case "profile":
 			var p identity.Profile
 			_ = decode([]byte(raw), &p)
