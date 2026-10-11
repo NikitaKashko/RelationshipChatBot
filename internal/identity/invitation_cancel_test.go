@@ -2,6 +2,7 @@ package identity_test
 
 import (
 	"errors"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 	"testing"
 )
@@ -27,6 +28,17 @@ func TestAccessOwnerOnlyAndPartnerReissue(t *testing.T) {
 		t.Fatal(e)
 	}
 	f.enroll(t, 3, current)
+	if f.count(t, "SELECT count(*) FROM notifications WHERE kind='partner_registered' AND recipient_id=2") != 1 {
+		t.Fatal("missing registration notification")
+	}
+	if err := f.db.Write(f.ctx, func(q store.Query) error {
+		return f.ids.FinishProfile(f.ctx, q, 3, identity.Profile{City: "Москва", Timezone: "Europe/Moscow"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if f.count(t, "SELECT count(*) FROM notifications WHERE kind='partner_registered'") != 1 {
+		t.Fatal("duplicate registration notification")
+	}
 	if _, e = f.ids.Accept(f.ctx, 3, current); e != nil {
 		t.Fatal(e)
 	}

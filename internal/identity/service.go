@@ -263,6 +263,37 @@ func (s *Service) FinishProfile(ctx context.Context, q store.Query, actor int64,
 	if _, err = q.ExecContext(ctx, "UPDATE users SET city=?,timezone=?,notification_name=?,status='ready' WHERE id=?", strings.TrimSpace(p.City), p.Timezone, strings.TrimSpace(p.Name), actor); err != nil {
 		return err
 	}
+	if u.Status != "ready" {
+		rows, e := q.QueryContext(ctx, "SELECT token_hash,sender_id FROM invitations WHERE claimed_by=? AND kind='partner' AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?", actor, s.Store.Now().Unix())
+		if e != nil {
+			return e
+		}
+		type invite struct {
+			hash   string
+			sender int64
+		}
+		pending := []invite{}
+		for rows.Next() {
+			var i invite
+			if e = rows.Scan(&i.hash, &i.sender); e != nil {
+				rows.Close()
+				return e
+			}
+			pending = append(pending, i)
+		}
+		e = rows.Err()
+		rows.Close()
+		if e != nil {
+			return e
+		}
+		for _, i := range pending {
+			payload, _ := json.Marshal(map[string]string{"text": strings.TrimSpace(p.Name) + " теперь в боте 💛 Регистрация готова — осталось подтвердить создание пары.", "invitation_hash": i.hash})
+			_, e = q.ExecContext(ctx, "INSERT INTO notifications(semantic_key,recipient_id,kind,payload,available_at,expires_at,created_at) VALUES(?,?,'partner_registered',?,?,?,?) ON CONFLICT(semantic_key) DO NOTHING", "invitation:"+i.hash+":registered", i.sender, string(payload), s.Store.Now().Unix(), s.Store.Now().Unix()+48*3600, s.Store.Now().Unix())
+			if e != nil {
+				return e
+			}
+		}
+	}
 	_, err = q.ExecContext(ctx, "UPDATE invitations SET consumed_at=? WHERE claimed_by=? AND kind IN ('owner','access') AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?", s.Store.Now().Unix(), actor, s.Store.Now().Unix())
 	return err
 }

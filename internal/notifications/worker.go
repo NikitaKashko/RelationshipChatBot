@@ -117,13 +117,21 @@ func (w *Worker) next(ctx context.Context) (*Message, error) {
 		for _, e := range entries {
 			m := e.m
 			var payload struct {
-				Plan    int64 `json:"plan_id"`
-				Version int64 `json:"version"`
+				Plan           int64  `json:"plan_id"`
+				Version        int64  `json:"version"`
+				InvitationHash string `json:"invitation_hash"`
 			}
 			if err = json.Unmarshal(m.Payload, &payload); err != nil {
 				return err
 			}
 			relevant := true
+			if m.Kind == "partner_registered" {
+				var count int
+				if err = q.QueryRowContext(ctx, "SELECT count(*) FROM invitations i JOIN users u ON u.id=i.claimed_by WHERE i.token_hash=? AND i.kind='partner' AND i.sender_id=? AND i.revoked_at IS NULL AND u.status='ready'", payload.InvitationHash, m.Recipient).Scan(&count); err != nil {
+					return err
+				}
+				relevant = count == 1
+			}
 			if m.Kind == "reminder" || m.Kind == "feedback" || m.Kind == "plan_saved" {
 				var status string
 				var version int64

@@ -86,3 +86,31 @@ func TestEnabledAssistantSurvivesRestartAndMenuDoesNotAskAgain(t *testing.T) {
 	}
 	router.Handle(ctx, b, &models.Update{CallbackQuery: &models.CallbackQuery{ID: "cb", From: models.User{ID: 1}, Data: "menu:ai", Message: models.MaybeInaccessibleMessage{Message: &models.Message{Chat: models.Chat{ID: 1, Type: models.ChatTypePrivate}}}}})
 }
+
+func TestAssistantStatusExplainsMissingPartnerConsent(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(ctx, filepath.Join(t.TempDir(), "test.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.DB.Close()
+	_, err = db.DB.ExecContext(ctx, `INSERT INTO users(id,name,code,status,created_at) VALUES(1,'A','A','ready',1),(2,'B','B','ready',1);
+	INSERT INTO pairs(id,created_at) VALUES(1,1); INSERT INTO pair_members(pair_id,user_id) VALUES(1,1),(1,2);
+	INSERT INTO consents(user_id,kind,enabled,updated_at) VALUES(1,'ai',1,1);`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := Router{Store: db}
+	enabled, status, err := r.aiStatus(ctx, 1)
+	if err != nil || !enabled || !strings.Contains(status, "партнёру тоже нужно") {
+		t.Fatal(enabled, status, err)
+	}
+	_, err = db.DB.ExecContext(ctx, "INSERT INTO consents(user_id,kind,enabled,updated_at) VALUES(2,'ai',1,1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, status, err = r.aiStatus(ctx, 1)
+	if err != nil || strings.Contains(status, "партнёру тоже нужно") {
+		t.Fatal(status, err)
+	}
+}

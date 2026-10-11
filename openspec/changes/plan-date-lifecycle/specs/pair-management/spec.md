@@ -20,6 +20,10 @@ The system SHALL distinguish owner-issued access invitations from partner invita
 ### Requirement: Profile and pairing
 The system SHALL collect personal city, notification name and confirmed personal timezone during onboarding. Pair creation SHALL require recipient confirmation and use invitation links exclusively; friendship codes SHALL NOT be displayed or accepted. A user SHALL belong to at most one active pair.
 
+#### Scenario: Partner finishes registration
+- **WHEN** the recipient of a partner invitation confirms their completed profile
+- **THEN** one durable notification informs its sender that registration is complete, independently from the later pairing confirmation; repeated profile saves do not duplicate it, revoked invitations suppress delivery, and quiet hours apply.
+
 #### Scenario: Competing invitations
 - **WHEN** two pairing acceptances race for the same user
 - **THEN** only one active pair is created and the other acceptance reports the changed state.

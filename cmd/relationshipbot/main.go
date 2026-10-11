@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
+	"image/jpeg"
+	_ "image/png"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,6 +22,7 @@ import (
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/telegram"
 	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 func run() error {
@@ -32,6 +37,33 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	switch command {
+	case "set-avatar":
+		if len(os.Args) != 3 {
+			return fmt.Errorf("set-avatar requires image path")
+		}
+		f, err := os.Open(os.Args[2])
+		if err != nil {
+			return fmt.Errorf("cannot open avatar")
+		}
+		defer f.Close()
+		img, _, err := image.Decode(f)
+		if err != nil {
+			return fmt.Errorf("invalid avatar image")
+		}
+		var jpegData bytes.Buffer
+		if err = jpeg.Encode(&jpegData, img, &jpeg.Options{Quality: 95}); err != nil {
+			return fmt.Errorf("cannot encode avatar")
+		}
+		b, err := bot.New(cfg.BotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {}))
+		if err != nil {
+			return fmt.Errorf("invalid Telegram configuration")
+		}
+		ok, err := b.SetMyProfilePhoto(ctx, &bot.SetMyProfilePhotoParams{Photo: &models.InputProfilePhotoStatic{Photo: "attach://avatar.jpg", MediaAttachment: bytes.NewReader(jpegData.Bytes())}})
+		if err != nil || !ok {
+			return fmt.Errorf("Telegram avatar update failed")
+		}
+		fmt.Println("AVATAR_UPDATED")
+		return nil
 	case "panel", "backup", "verify-backup":
 		appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
