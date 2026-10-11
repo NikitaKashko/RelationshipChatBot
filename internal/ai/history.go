@@ -14,7 +14,7 @@ import (
 func prefix(pair int64) string { return fmt.Sprintf("p%d-", pair) }
 
 func (s *Service) current(ctx context.Context, actor, pair int64, id string) error {
-	current, err := store.AIFor(ctx, s.Store.DB, actor)
+	current, err := store.AIConversationFor(ctx, s.Store.DB, actor)
 	if err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func (s *Service) Prune(ctx context.Context) error {
 func (s *Service) New(ctx context.Context, actor int64) (string, error) {
 	var id string
 	err := s.Store.Write(ctx, func(q store.Query) error {
-		pair, err := store.AIFor(ctx, q, actor)
+		pair, err := store.AIConversationFor(ctx, q, actor)
 		if err != nil {
 			return err
 		}
@@ -84,7 +84,7 @@ func (s *Service) begin(ctx context.Context, actor int64, text string) (id strin
 	}
 	err = s.Store.Write(ctx, func(q store.Query) error {
 		var e error
-		pair, e = store.AIFor(ctx, q, actor)
+		pair, e = store.AIConversationFor(ctx, q, actor)
 		if e != nil {
 			return e
 		}

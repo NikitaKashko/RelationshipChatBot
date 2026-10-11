@@ -17,7 +17,7 @@ func (s *Service) Retry(ctx context.Context, actor int64, id string) (Result, er
 	}
 	var text string
 	err := s.Store.Write(ctx, func(q store.Query) error {
-		pair, err := store.AIFor(ctx, q, actor)
+		pair, err := store.AIConversationFor(ctx, q, actor)
 		if err != nil {
 			return err
 		}
@@ -32,7 +32,10 @@ func (s *Service) Retry(ctx context.Context, actor int64, id string) (Result, er
 		if err != nil {
 			return err
 		}
-		if scope.Int64 != pair || applied.Valid || expiry <= float64(s.Store.Now().Unix()) {
+		if scope.Int64 != pair {
+			return store.ErrDenied
+		}
+		if applied.Valid || expiry <= float64(s.Store.Now().Unix()) {
 			return store.ErrConflict
 		}
 		var p struct {

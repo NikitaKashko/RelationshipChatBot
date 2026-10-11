@@ -67,3 +67,7 @@ AI and search SHALL initially have no application request quotas or hard spendin
 #### Scenario: Provider failure
 - **WHEN** DeepSeek or search fails
 - **THEN** the bot preserves the request and draft, offers «Повторить», makes no automatic paid retry and keeps manual features usable.
+
+#### Scenario: Personal chat while partner consent is missing
+- **WHEN** the caller has enabled AI but their active partner has not
+- **THEN** personal text chat and new conversation remain available, using only the caller's messages, personal city and timezone; shared tools, external search and writes are unavailable, and conversations containing shared pair context are not reused. Withdrawal of the caller's own consent blocks provider calls.

@@ -328,3 +328,32 @@ func TestAIWithdrawalDuringRequestStopsDraftCreation(t *testing.T) {
 		t.Fatal("in-flight request prepared draft after withdrawal")
 	}
 }
+
+func TestPersonalChatWithoutPartnerConsentDoesNotExposeSharedData(t *testing.T) {
+	d := fixture(t)
+	d.apply(t, 1, "consent", map[string]any{"kind": "ai", "enabled": true})
+	d.place(t, 2, "SECRET_PARTNER_PLACE")
+	s := ai.Service{Store: d.db, Model: "test"}
+	calls := 0
+	s.Provider = fakeProvider(func(_ context.Context, m []ai.Message, tools []any) (ai.Completion, error) {
+		calls++
+		raw, _ := json.Marshal(m)
+		if strings.Contains(string(raw), "SECRET_PARTNER_PLACE") || len(tools) != 0 {
+			t.Fatal("shared context or tools exposed")
+		}
+		return answer("Привет"), nil
+	})
+	if _, err := s.Converse(d.ctx, 1, "Привет"); err != nil || calls != 1 {
+		t.Fatal(err, calls)
+	}
+	if _, err := s.Select(d.ctx, 1, ai.Query{}); !errors.Is(err, store.ErrDenied) {
+		t.Fatal("shared collection accessible", err)
+	}
+	if _, err := s.New(d.ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	d.apply(t, 1, "consent", map[string]any{"kind": "ai", "enabled": false})
+	if _, err := s.Converse(d.ctx, 1, "Привет"); !errors.Is(err, store.ErrDenied) || calls != 1 {
+		t.Fatal("own consent bypassed", err, calls)
+	}
+}

@@ -14,7 +14,7 @@ import (
 func (r *Router) aiResult(ctx context.Context, b *bot.Bot, actor int64, result ai.Result, err error) {
 	if err != nil {
 		if errors.Is(err, store.ErrDenied) {
-			r.send(ctx, b, actor, "Для ИИ нужно согласие твоё и партнёра: /ai. Ручные функции доступны всегда.", nil)
+			r.send(ctx, b, actor, "Для личного помощника нужно твоё согласие: нажми «🤖 Помощник». Для общей копилки и планов — согласие обоих. Ручные функции доступны всегда.", nil)
 		} else {
 			r.send(ctx, b, actor, publicError(err), nil)
 		}

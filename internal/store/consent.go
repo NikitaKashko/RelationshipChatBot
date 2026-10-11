@@ -26,3 +26,23 @@ func AIFor(ctx context.Context, q Query, actor int64) (int64, error) {
 	}
 	return pair, nil
 }
+
+// AIConversationFor permits personal chat with the caller's consent. Shared
+// data/tools continue to use AIFor and require every active member's consent.
+func AIConversationFor(ctx context.Context, q Query, actor int64) (int64, error) {
+	if _, err := UserFor(ctx, q, actor, false); err != nil {
+		return 0, err
+	}
+	var enabled bool
+	if err := q.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM consents WHERE user_id=? AND kind='ai' AND enabled=1)", actor).Scan(&enabled); err != nil {
+		return 0, err
+	}
+	if !enabled {
+		return 0, ErrDenied
+	}
+	pair, err := AIFor(ctx, q, actor)
+	if err == ErrDenied {
+		return 0, nil
+	}
+	return pair, err
+}
