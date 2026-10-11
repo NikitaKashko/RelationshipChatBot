@@ -2,6 +2,8 @@
 
 Позволить управлять ботом голосовыми сообщениями с теми же правилами приватности, уточнения и подтверждения изменений, что и в текстовом диалоге.
 
+Status: Deferred beyond the 2026-10-12 prototype. Voice messages receive a text-input explanation; the following requirements apply to a future release.
+
 ## ADDED Requirements
 
 ### Requirement: Voice conversation

@@ -181,13 +181,27 @@ func (s *Service) Claim(ctx context.Context, actor int64, name, token string) (k
 }
 
 func (s *Service) Revoke(ctx context.Context, actor int64, token string) error {
+	return s.RevokeHash(ctx, actor, Hash(token))
+}
+
+func (s *Service) CancelPartners(ctx context.Context, actor int64) error {
+	return s.Store.Write(ctx, func(q store.Query) error {
+		if _, err := store.UserFor(ctx, q, actor, false); err != nil {
+			return err
+		}
+		_, err := q.ExecContext(ctx, "UPDATE invitations SET revoked_at=? WHERE sender_id=? AND kind='partner' AND consumed_at IS NULL AND revoked_at IS NULL", s.Store.Now().Unix(), actor)
+		return err
+	})
+}
+
+func (s *Service) RevokeHash(ctx context.Context, actor int64, hash string) error {
 	return s.Store.Write(ctx, func(q store.Query) error {
 		u, e := store.UserFor(ctx, q, actor, false)
 		if e != nil {
 			return e
 		}
 		var sender sql.NullInt64
-		e = q.QueryRowContext(ctx, "SELECT sender_id FROM invitations WHERE token_hash=?", Hash(token)).Scan(&sender)
+		e = q.QueryRowContext(ctx, "SELECT sender_id FROM invitations WHERE token_hash=?", hash).Scan(&sender)
 		if errors.Is(e, sql.ErrNoRows) {
 			return store.ErrDenied
 		}
@@ -197,7 +211,7 @@ func (s *Service) Revoke(ctx context.Context, actor int64, token string) error {
 		if u.Role != "owner" && (!sender.Valid || sender.Int64 != actor) {
 			return store.ErrDenied
 		}
-		_, e = q.ExecContext(ctx, "UPDATE invitations SET revoked_at=? WHERE token_hash=?", s.Store.Now().Unix(), Hash(token))
+		_, e = q.ExecContext(ctx, "UPDATE invitations SET revoked_at=? WHERE token_hash=?", s.Store.Now().Unix(), hash)
 		return e
 	})
 }

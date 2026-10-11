@@ -2,6 +2,8 @@
 
 Обеспечить регистрацию по приглашениям, осознанное объединение двух пользователей и разделение личных и общих данных на протяжении жизни пары.
 
+The prototype ships link registration and pairing. Separation, export and account deletion below are future requirements and are not exposed in the prototype.
+
 ## ADDED Requirements
 
 ### Requirement: Invitation enrollment
@@ -16,7 +18,7 @@ The system SHALL distinguish owner-issued access invitations from partner invita
 - **THEN** they can register and explicitly confirm pairing with its sender; an already paired sender makes the invitation invalid.
 
 ### Requirement: Profile and pairing
-The system SHALL collect personal city, notification name and confirmed personal timezone during onboarding. Pair creation SHALL require recipient confirmation and support a friendship code as a fallback. A user SHALL belong to at most one active pair.
+The system SHALL collect personal city, notification name and confirmed personal timezone during onboarding. Pair creation SHALL require recipient confirmation and use invitation links exclusively; friendship codes SHALL NOT be displayed or accepted. A user SHALL belong to at most one active pair.
 
 #### Scenario: Competing invitations
 - **WHEN** two pairing acceptances race for the same user

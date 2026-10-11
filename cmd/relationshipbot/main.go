@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/ai"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/backup"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/config"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/dashboard"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/notifications"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
@@ -29,6 +32,36 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	switch command {
+	case "panel", "backup", "verify-backup":
+		appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if command == "verify-backup" {
+			if len(os.Args) != 3 {
+				return fmt.Errorf("verify-backup requires snapshot path")
+			}
+			if err := backup.Verify(appCtx, os.Args[2]); err != nil {
+				return err
+			}
+			fmt.Println("BACKUP_INTEGRITY_OK")
+			return nil
+		}
+		db, err := store.Open(ctx, cfg.DatabasePath)
+		if err != nil {
+			return fmt.Errorf("database initialization failed")
+		}
+		defer db.DB.Close()
+		backups := &backup.Service{Store: db, Dir: cfg.BackupDir}
+		if command == "backup" {
+			job, cancel := context.WithTimeout(appCtx, 2*time.Minute)
+			defer cancel()
+			if _, err = backups.Run(job); err != nil {
+				return fmt.Errorf("backup failed: %w", err)
+			}
+			fmt.Println("BACKUP_OK verified consistent snapshot")
+			return nil
+		}
+		panel := &dashboard.Panel{Store: db, Backup: backups, Password: cfg.PanelPassword, Username: cfg.BotUsername, HealthPath: filepath.Join(filepath.Dir(cfg.DatabasePath), "heartbeat")}
+		return panel.Serve(appCtx)
 	case "check-search":
 		searchCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
@@ -102,6 +135,13 @@ func run() error {
 		r.Username = me.Username
 		poll, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
+		heartbeatDone := make(chan struct{})
+		go func() {
+			defer close(heartbeatDone)
+			if dashboard.Heartbeat(poll, filepath.Join(filepath.Dir(cfg.DatabasePath), "heartbeat")) != nil {
+				stop()
+			}
+		}()
 		worker := notifications.Worker{Store: db, Send: r.NotificationSender(b)}
 		if err = worker.Recover(ctx); err != nil {
 			return fmt.Errorf("notification recovery failed")
@@ -133,10 +173,11 @@ func run() error {
 				stop()
 			}
 		}()
-		fmt.Println("Telegram registration polling started; full release still in development")
+		fmt.Println("Telegram prototype polling started")
 		b.Start(poll)
 		stop()
 		<-cleanupDone
+		<-heartbeatDone
 		return <-workerDone
 	case "check":
 		if cfg.BotToken == "" {
@@ -171,7 +212,7 @@ func run() error {
 		fmt.Printf("Owner invitation (7 days): /start %s\n", token)
 		return nil
 	default:
-		return fmt.Errorf("commands: check, check-ai, check-ai-flow, migrate, bootstrap, serve")
+		return fmt.Errorf("commands: check, check-ai, check-ai-flow, migrate, bootstrap, serve, panel, backup, verify-backup")
 	}
 }
 

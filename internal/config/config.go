@@ -14,6 +14,7 @@ import (
 type Config struct {
 	BotToken, DeepSeekKey, DeepSeekModel, DatabasePath string
 	USDRUB, BudgetTargetRUB                            float64
+	PanelPassword, BackupDir, BotUsername              string
 }
 
 func Load(path string) (Config, error) {
@@ -56,9 +57,9 @@ func Load(path string) (Config, error) {
 	if err != nil || fx < 0 || math.IsNaN(fx) || math.IsInf(fx, 0) {
 		return Config{}, errors.New("invalid billing exchange rate")
 	}
-	target, err := strconv.ParseFloat(get("BILLING_TARGET_RUB", "500"), 64)
+	target, err := strconv.ParseFloat(get("BILLING_TARGET_RUB", "0"), 64)
 	if err != nil || target < 0 || math.IsNaN(target) || math.IsInf(target, 0) {
 		return Config{}, errors.New("invalid billing target")
 	}
-	return Config{BotToken: get("BOT_TOKEN", ""), DeepSeekKey: get("DEEPSEEK_API_KEY", ""), DeepSeekModel: get("DEEPSEEK_MODEL", "deepseek-flash"), DatabasePath: get("DATABASE_PATH", "data/release.sqlite"), USDRUB: fx, BudgetTargetRUB: target}, nil
+	return Config{BotToken: get("BOT_TOKEN", ""), DeepSeekKey: get("DEEPSEEK_API_KEY", ""), DeepSeekModel: get("DEEPSEEK_MODEL", "deepseek-flash"), DatabasePath: get("DATABASE_PATH", "data/release.sqlite"), USDRUB: fx, BudgetTargetRUB: target, PanelPassword: get("PANEL_PASSWORD", ""), BackupDir: get("BACKUP_DIR", "data/backups"), BotUsername: get("BOT_USERNAME", "relation_support_bot")}, nil
 }

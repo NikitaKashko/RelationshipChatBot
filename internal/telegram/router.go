@@ -73,7 +73,7 @@ func (r *Router) wizard(ctx context.Context, b *bot.Bot, actor int64, w Wizard) 
 }
 
 func (r *Router) home(ctx context.Context, b *bot.Bot, actor int64) {
-	u, err := store.UserFor(ctx, r.Store.DB, actor, false)
+	_, err := store.UserFor(ctx, r.Store.DB, actor, false)
 	if err != nil {
 		r.send(ctx, b, actor, publicError(err), nil)
 		return
@@ -115,7 +115,7 @@ func (r *Router) home(ctx context.Context, b *bot.Bot, actor int64) {
 		r.send(ctx, b, actor, "Создать пару с "+name+"?", button("Создать пару", "save:"+draft))
 		return
 	}
-	r.send(ctx, b, actor, "Профиль готов. Твой код дружбы: "+u.Code+"\n/invite — получить ссылку для партнёра.", nil)
+	r.send(ctx, b, actor, "Профиль готов 💛\n/invite — ссылка для партнёра\n/cancelinvite — отменить приглашение\n/places — твои идеи\n/ai — включить помощника", nil)
 }
 
 func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -213,11 +213,24 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		r.send(ctx, b, actor, "Пригласи партнёра: https://t.me/"+r.Username+"?start="+token+"\nСсылка одноразовая, действует 7 дней. Получатель подтвердит создание пары.", nil)
 		return
 	}
+	if m.Voice != nil {
+		r.send(ctx, b, actor, "Голосовые отложили. Напиши запрос текстом 💛", nil)
+		return
+	}
+	if text == "/cancelinvite" {
+		err := ids.CancelPartners(ctx, actor)
+		if err != nil {
+			r.send(ctx, b, actor, publicError(err), nil)
+		} else {
+			r.send(ctx, b, actor, "Твои действующие приглашения в пару отменены. /invite — создать новое.", nil)
+		}
+		return
+	}
 	if r.collectionMessage(ctx, b, m) {
 		return
 	}
 	if r.aiMessage(ctx, b, actor, text) {
 		return
 	}
-	r.send(ctx, b, actor, "Регистрация готова. /start — профиль и приглашение в пару. Остальные функции пока в разработке.", nil)
+	r.send(ctx, b, actor, "/start — меню, /places — идеи, /plans — свидания. Для помощника включи /ai и пиши обычным текстом.", nil)
 }

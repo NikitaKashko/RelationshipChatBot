@@ -12,7 +12,7 @@ The system SHALL provide a mobile-usable web dashboard on the bot VPS accessible
 - **THEN** the dashboard is unavailable; the authorized owner can reach it through the prescribed tunnel.
 
 ### Requirement: Operational infographic
-The dashboard SHALL show bot health, last backup status, daily DeepSeek and search spending, request and error counts, pending notifications and totals of users, pairs, ideas and dates. Estimated costs SHALL be identified as estimates.
+The dashboard SHALL show bot health, last backup status, daily DeepSeek and search usage, request and error counts, pending notifications and totals of users, pairs, ideas and dates. Monetary calculations are deferred in the prototype.
 
 #### Scenario: Missing usage accounting
 - **WHEN** a failed provider request returns no token usage
@@ -30,7 +30,7 @@ The system SHALL create daily consistent database backups on the same VPS, retai
 
 #### Scenario: Restore check
 - **WHEN** a retained backup is restored in a test environment
-- **THEN** database integrity and pending deletion replay are checked before using the restored database.
+- **THEN** database integrity and foreign keys are checked; the prototype rejects snapshots with pending deletions until independent replay is implemented.
 
 #### Scenario: Disk pressure
 - **WHEN** there is insufficient space for a new backup
