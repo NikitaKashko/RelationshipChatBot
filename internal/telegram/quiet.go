@@ -19,7 +19,7 @@ func (r *Router) showQuiet(ctx context.Context, b *bot.Bot, actor int64) {
 	if start == end {
 		status = "выключены"
 	}
-	r.send(ctx, b, actor, fmt.Sprintf("🌙 Тихие часы: %s\nТвой часовой пояс: %s\nВ это время уведомления ждут. На твои сообщения бот отвечает сразу.", status, zone), navButtons("23:00–09:00", "quiet_default", "00:00–10:00", "quiet_late", "✏️ Указать своё время", "quiet_custom", "🔔 Выключить тихие часы", "quiet_off", "🏠 Главное меню", "start"))
+	r.send(ctx, b, actor, fmt.Sprintf("🌙 Тихие часы: %s\nТвой часовой пояс: %s\nВ это время уведомления ждут, кроме знаков внимания и создания пары — они приходят сразу. На твои сообщения бот отвечает сразу.", status, zone), navButtons("23:00–09:00", "quiet_default", "00:00–10:00", "quiet_late", "✏️ Указать своё время", "quiet_custom", "🔔 Выключить тихие часы", "quiet_off", "🏠 Главное меню", "start"))
 }
 func (r *Router) quietMessage(ctx context.Context, b *bot.Bot, actor int64, text string) bool {
 	if text == "/quiet" {

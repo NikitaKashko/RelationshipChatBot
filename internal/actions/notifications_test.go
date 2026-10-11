@@ -73,7 +73,7 @@ func TestOutboxRecoveryAndUnknownOutcomeNeverRepeat(t *testing.T) {
 func TestOutboxQuietHoursExpiryAndBoundedRejections(t *testing.T) {
 	d := fixture(t)
 	d.now = time.Date(2026, 10, 11, 21, 0, 0, 0, time.UTC) // Midnight Moscow.
-	id := queued(t, d, "affection", d.now, d.now.Add(12*time.Hour))
+	id := queued(t, d, "freeze_changed", d.now, d.now.Add(12*time.Hour))
 	calls := 0
 	w := notifications.Worker{Store: d.db, Send: func(context.Context, notifications.Message) (int64, error) { calls++; return 10, nil }}
 	if more, err := w.Step(d.ctx); err != nil || more {
@@ -196,5 +196,27 @@ func TestQuietWindowsPersonalTimezoneAndDST(t *testing.T) {
 	out, err := notifications.Permitted(dst, "Europe/Berlin", "01:00", "03:00")
 	if err != nil || !out.Equal(time.Date(2026, 10, 25, 2, 0, 0, 0, time.UTC)) {
 		t.Fatal("DST quiet end", out, err)
+	}
+}
+
+func TestImmediateNotificationsIgnoreQuietHours(t *testing.T) {
+	for _, kind := range []string{"affection", "pair_created"} {
+		t.Run(kind, func(t *testing.T) {
+			d := fixture(t)
+			d.now = time.Date(2026, 10, 11, 21, 0, 0, 0, time.UTC)
+			id := queued(t, d, kind, d.now, d.now.Add(12*time.Hour))
+			calls := 0
+			w := notifications.Worker{Store: d.db, Send: func(context.Context, notifications.Message) (int64, error) { calls++; return 1, nil }}
+			if more, err := w.Step(d.ctx); err != nil || !more || calls != 1 || state(t, d, id) != "sent" {
+				t.Fatal("quiet exception failed", more, err, calls)
+			}
+			delayed := queued(t, d, kind, d.now.Add(9*time.Hour), d.now.Add(12*time.Hour))
+			if _, err := d.db.DB.ExecContext(d.ctx, "UPDATE notifications SET error='quiet hours' WHERE id=?", delayed); err != nil {
+				t.Fatal(err)
+			}
+			if more, err := w.Step(d.ctx); err != nil || !more || calls != 2 || state(t, d, delayed) != "sent" {
+				t.Fatal("deferred message not released", more, err, calls)
+			}
+		})
 	}
 }

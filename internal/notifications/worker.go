@@ -82,6 +82,10 @@ func (w *Worker) next(ctx context.Context) (*Message, error) {
 		if _, err := q.ExecContext(ctx, `UPDATE notifications SET status='cancelled' WHERE status='pending' AND (expires_at<=? OR NOT EXISTS(SELECT 1 FROM users u WHERE u.id=recipient_id AND u.status='ready') OR (pair_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM pairs p JOIN pair_members m ON m.pair_id=p.id WHERE p.id=notifications.pair_id AND p.status='active' AND m.active=1 AND m.user_id=recipient_id)))`, now.Unix()); err != nil {
 			return err
 		}
+		// Release valid messages deferred under the previous quiet-hours policy.
+		if _, err := q.ExecContext(ctx, "UPDATE notifications SET available_at=?,error=NULL WHERE status='pending' AND kind IN ('affection','pair_created') AND (error='quiet hours' OR (error IS NULL AND available_at>created_at))", now.Unix()); err != nil {
+			return err
+		}
 		// Keep the newest saved summary for each recipient/plan; old scheduled jobs
 		// are checked against the current version below, rather than merged.
 		if _, err := q.ExecContext(ctx, `UPDATE notifications SET status='cancelled' WHERE status='pending' AND kind='plan_saved' AND EXISTS(SELECT 1 FROM notifications n WHERE n.status='pending' AND n.kind='plan_saved' AND n.pair_id=notifications.pair_id AND n.recipient_id=notifications.recipient_id AND json_extract(n.payload,'$.plan_id')=json_extract(notifications.payload,'$.plan_id') AND n.id>notifications.id)`); err != nil {
@@ -165,7 +169,10 @@ func (w *Worker) next(ctx context.Context) (*Message, error) {
 			if err = q.QueryRowContext(ctx, "SELECT timezone,quiet_start,quiet_end FROM users WHERE id=?", m.Recipient).Scan(&zone, &from, &to); err != nil {
 				return err
 			}
-			allowed, err := Permitted(now, zone, from, to)
+			allowed := now
+			if m.Kind != "affection" && m.Kind != "pair_created" {
+				allowed, err = Permitted(now, zone, from, to)
+			}
 			if err != nil {
 				if _, err = q.ExecContext(ctx, "UPDATE notifications SET status='failed',error='invalid quiet settings' WHERE id=?", m.ID); err != nil {
 					return err

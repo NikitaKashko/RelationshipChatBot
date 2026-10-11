@@ -23,7 +23,7 @@ The system SHALL schedule one feedback prompt per partner at 12:00 on the next c
 - **THEN** no repeated automatic reminder is generated; the user can return to the available feedback action.
 
 ### Requirement: Quiet hours
-Each user SHALL have personal quiet hours defaulting to 23:00–09:00 in their timezone. All outbound notifications SHALL wait outside those hours, with successive pending changes to one plan coalesced. Direct replies to current user interactions SHALL remain available.
+Each user SHALL have personal quiet hours defaulting to 23:00–09:00 in their timezone. Affection and pair creation SHALL bypass quiet hours. Other outbound notifications SHALL wait outside those hours, with successive pending changes to one plan coalesced. Direct replies to current user interactions SHALL remain available.
 
 #### Scenario: Quiet feedback
 - **WHEN** the pair-scheduled feedback falls inside a recipient's quiet hours
