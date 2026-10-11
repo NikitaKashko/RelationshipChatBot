@@ -24,6 +24,7 @@ type Service struct {
 	Store    *store.Store
 	Provider Provider
 	Model    string
+	Billing  Billing
 	users    sync.Map
 }
 type Draft struct{ ID, Preview string }
@@ -225,18 +226,9 @@ func (s *Service) Converse(ctx context.Context, actor int64, text string) (Resul
 			return result, e
 		}
 		completion, e := s.Provider.Complete(ctx, messages, tools())
-		accountErr := s.Store.Write(ctx, func(q store.Query) error {
-			var input, cached, output any
-			uncertain := true
-			if completion.Usage != nil {
-				input = completion.Usage.Input
-				cached = completion.Usage.Cached
-				output = completion.Usage.Output
-				uncertain = false
-			}
-			_, err := q.ExecContext(ctx, "UPDATE api_usage SET input_tokens=?,cached_tokens=?,output_tokens=?,uncertain=?,success=? WHERE id=?", input, cached, output, uncertain, e == nil, usageID)
-			return err
-		})
+		accountCtx, accountCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		accountErr := s.account(accountCtx, usageID, completion.Usage, e == nil)
+		accountCancel()
 		if accountErr != nil {
 			return result, accountErr
 		}

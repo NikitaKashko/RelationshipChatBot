@@ -5,11 +5,16 @@ package config
 import (
 	"bufio"
 	"errors"
+	"math"
 	"os"
+	"strconv"
 	"strings"
 )
 
-type Config struct{ BotToken, DeepSeekKey, DeepSeekModel, DatabasePath string }
+type Config struct {
+	BotToken, DeepSeekKey, DeepSeekModel, DatabasePath string
+	USDRUB, BudgetTargetRUB                            float64
+}
 
 func Load(path string) (Config, error) {
 	values := map[string]string{}
@@ -47,5 +52,13 @@ func Load(path string) (Config, error) {
 		}
 		return fallback
 	}
-	return Config{BotToken: get("BOT_TOKEN", ""), DeepSeekKey: get("DEEPSEEK_API_KEY", ""), DeepSeekModel: get("DEEPSEEK_MODEL", "deepseek-flash"), DatabasePath: get("DATABASE_PATH", "data/release.sqlite")}, nil
+	fx, err := strconv.ParseFloat(get("BILLING_USD_RUB", "0"), 64)
+	if err != nil || fx < 0 || math.IsNaN(fx) || math.IsInf(fx, 0) {
+		return Config{}, errors.New("invalid billing exchange rate")
+	}
+	target, err := strconv.ParseFloat(get("BILLING_TARGET_RUB", "500"), 64)
+	if err != nil || target < 0 || math.IsNaN(target) || math.IsInf(target, 0) {
+		return Config{}, errors.New("invalid billing target")
+	}
+	return Config{BotToken: get("BOT_TOKEN", ""), DeepSeekKey: get("DEEPSEEK_API_KEY", ""), DeepSeekModel: get("DEEPSEEK_MODEL", "deepseek-flash"), DatabasePath: get("DATABASE_PATH", "data/release.sqlite"), USDRUB: fx, BudgetTargetRUB: target}, nil
 }

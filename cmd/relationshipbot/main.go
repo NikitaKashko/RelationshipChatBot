@@ -54,7 +54,7 @@ func run() error {
 		}
 		defer db.DB.Close()
 		r := &telegram.Router{Store: db}
-		r.AI = &ai.Service{Store: db, Model: cfg.DeepSeekModel}
+		r.AI = &ai.Service{Store: db, Model: cfg.DeepSeekModel, Billing: ai.Billing{USDRUB: cfg.USDRUB, TargetRUB: cfg.BudgetTargetRUB}}
 		if cfg.DeepSeekKey != "" {
 			r.AI.Provider = &ai.DeepSeek{Key: cfg.DeepSeekKey, Model: cfg.DeepSeekModel}
 		}

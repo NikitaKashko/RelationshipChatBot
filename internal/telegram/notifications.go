@@ -60,7 +60,7 @@ func (r *Router) NotificationSender(b *bot.Bot) notifications.Sender {
 			text = "Партнёр предложил город пары: " + p.City + " (" + p.Timezone + "). Открой /start, чтобы подтвердить."
 		case "pair_created":
 			text = "Вы теперь пара 💛 Открой /start, чтобы продолжить."
-		case "affection":
+		case "affection", "budget_target":
 			text = p.Text
 		default:
 			return 0, notifications.ErrPermanent
