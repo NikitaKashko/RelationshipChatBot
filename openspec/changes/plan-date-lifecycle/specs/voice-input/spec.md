@@ -5,11 +5,15 @@
 ## ADDED Requirements
 
 ### Requirement: Voice conversation
-The system SHALL transcribe Telegram voice messages and normally process the text through the same contextual AI flow immediately. Uncertain or ambiguous transcriptions SHALL be clarified; the user SHALL be able to correct the interpreted text.
+The system SHALL transcribe Telegram voice messages locally with Whisper tiny, show the transcription and require «Верно» before processing through the contextual AI flow. The user SHALL be able to correct the interpreted text. Uncertain or ambiguous requests SHALL be clarified.
 
 #### Scenario: Unclear date
 - **WHEN** recognition cannot reliably distinguish the requested day or venue
 - **THEN** the bot asks for clarification before preparing an action based on that ambiguous field.
+
+#### Scenario: Ordinary voice request
+- **WHEN** a transcription is ready
+- **THEN** it is shown with confirmation and correction actions; no AI processing occurs before confirmation.
 
 ### Requirement: Equal mutation boundaries
 Voice input SHALL not bypass draft saving or sensitive-action confirmation. A speech-recognition failure SHALL offer retry or text input without corrupting an existing draft.

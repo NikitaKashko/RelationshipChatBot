@@ -1,0 +1,157 @@
+// Package actions separates model-prepared drafts from confirmed writes.
+package actions
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"io"
+
+	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+)
+
+type Service struct{ Store *store.Store }
+
+func decode(raw []byte, v any) error {
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	if err := d.Decode(v); err != nil {
+		return errors.New("неверные аргументы действия")
+	}
+	if err := d.Decode(new(any)); err != io.EOF {
+		return errors.New("лишние данные действия")
+	}
+	return nil
+}
+
+func validate(kind string, raw []byte) error {
+	switch kind {
+	case "profile":
+		return decode(raw, new(identity.Profile))
+	case "pair_accept":
+		return decode(raw, new(struct {
+			Hash string `json:"hash"`
+		}))
+	case "consent":
+		return decode(raw, new(struct {
+			Kind    string `json:"kind"`
+			Enabled bool   `json:"enabled"`
+		}))
+	default:
+		return errors.New("неизвестное действие")
+	}
+}
+
+func (s *Service) Prepare(ctx context.Context, actor int64, kind string, raw []byte) (id string, err error) {
+	if err = validate(kind, raw); err != nil {
+		return
+	}
+	err = s.Store.Write(ctx, func(q store.Query) error {
+		if _, e := store.UserFor(ctx, q, actor, kind == "profile"); e != nil {
+			return e
+		}
+		pair, e := store.PairFor(ctx, q, actor)
+		if e != nil {
+			return e
+		}
+		var scope any
+		if pair != 0 {
+			scope = pair
+		}
+		id, e = identity.RandomToken()
+		if e != nil {
+			return e
+		}
+		_, e = q.ExecContext(ctx, "INSERT INTO drafts(id,user_id,pair_id,kind,payload,created_at,expires_at) VALUES(?,?,?,?,?,?,?)", id, actor, scope, kind, string(raw), s.Store.Now().Unix(), s.Store.Now().Unix()+86400)
+		return e
+	})
+	return
+}
+
+func (s *Service) Apply(ctx context.Context, actor int64, id string) (result json.RawMessage, err error) {
+	err = s.Store.Write(ctx, func(q store.Query) error {
+		var kind, raw string
+		var pair sql.NullInt64
+		var expiry float64
+		var applied sql.NullFloat64
+		var previous sql.NullString
+		e := q.QueryRowContext(ctx, "SELECT kind,payload,pair_id,expires_at,applied_at,result FROM drafts WHERE id=? AND user_id=?", id, actor).Scan(&kind, &raw, &pair, &expiry, &applied, &previous)
+		if errors.Is(e, sql.ErrNoRows) {
+			return store.ErrDenied
+		}
+		if e != nil {
+			return e
+		}
+		if _, e = store.UserFor(ctx, q, actor, kind == "profile"); e != nil {
+			return e
+		}
+		// Completed callbacks are receipts, never new writes. Pair acceptance itself
+		// changes scope, so replay checks its resulting pair rather than old scope.
+		current, e := store.PairFor(ctx, q, actor)
+		if e != nil {
+			return e
+		}
+		if applied.Valid {
+			expected := pair.Int64
+			if kind == "pair_accept" {
+				var r struct {
+					Pair int64 `json:"pair"`
+				}
+				if e = json.Unmarshal([]byte(previous.String), &r); e != nil {
+					return e
+				}
+				expected = r.Pair
+			}
+			if current != expected {
+				return store.ErrConflict
+			}
+			result = json.RawMessage(previous.String)
+			return nil
+		}
+		if expiry <= float64(s.Store.Now().Unix()) || current != pair.Int64 {
+			return store.ErrConflict
+		}
+		if e = validate(kind, []byte(raw)); e != nil {
+			return e
+		}
+		ids := identity.Service{Store: s.Store}
+		switch kind {
+		case "profile":
+			var p identity.Profile
+			_ = decode([]byte(raw), &p)
+			if e = ids.FinishProfile(ctx, q, actor, p); e != nil {
+				return e
+			}
+			result = json.RawMessage(`{"saved":true}`)
+		case "pair_accept":
+			var p struct {
+				Hash string `json:"hash"`
+			}
+			_ = decode([]byte(raw), &p)
+			n, e := ids.AcceptIn(ctx, q, actor, p.Hash)
+			if e != nil {
+				return e
+			}
+			result, _ = json.Marshal(map[string]int64{"pair": n})
+		case "consent":
+			var p struct {
+				Kind    string `json:"kind"`
+				Enabled bool   `json:"enabled"`
+			}
+			_ = decode([]byte(raw), &p)
+			if p.Kind != "ai" && p.Kind != "notes" && p.Kind != "reviews" && p.Kind != "external_audio" {
+				return errors.New("неизвестное согласие")
+			}
+			if _, e = q.ExecContext(ctx, `INSERT INTO consents(user_id,kind,enabled,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,kind) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at`, actor, p.Kind, p.Enabled, s.Store.Now().Unix()); e != nil {
+				return e
+			}
+			result = json.RawMessage(`{"saved":true}`)
+		}
+		_, e = q.ExecContext(ctx, "UPDATE drafts SET applied_at=?,result=? WHERE id=?", s.Store.Now().Unix(), string(result), id)
+		return e
+	})
+	return
+}
