@@ -37,6 +37,16 @@ func (r *Router) aiResult(ctx context.Context, b *bot.Bot, actor int64, result a
 	for _, draft := range result.Drafts {
 		r.send(ctx, b, actor, draft.Preview, button("Сохранить", "save:"+draft.ID))
 	}
+	for _, card := range result.SearchCards {
+		rows := [][]models.InlineKeyboardButton{{{Text: "В идеи", CallbackData: "save:" + card.Ideas}}}
+		if card.Candidates != "" {
+			rows[0] = append(rows[0], models.InlineKeyboardButton{Text: "В кандидаты свидания", CallbackData: "save:" + card.Candidates})
+		}
+		r.send(ctx, b, actor, card.Preview, models.InlineKeyboardMarkup{InlineKeyboard: rows})
+	}
+	if result.SearchButton != nil {
+		r.send(ctx, b, actor, "Поиск запускается по твоему запросу.", button(result.SearchButton.Label, "ai_retry:"+result.SearchButton.Token))
+	}
 }
 func (r *Router) aiCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) bool {
 	if !strings.HasPrefix(q.Data, "ai_retry:") {
@@ -84,7 +94,7 @@ func (r *Router) aiMessage(ctx context.Context, b *bot.Bot, actor int64, text st
 		}
 		return true
 	}
-	if text == "" || strings.HasPrefix(text, "/") {
+	if text == "" || strings.HasPrefix(text, "/") && !strings.HasPrefix(text, "/search ") {
 		return false
 	}
 	if r.AI == nil || r.AI.Provider == nil {

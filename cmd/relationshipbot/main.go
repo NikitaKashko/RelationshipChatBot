@@ -29,6 +29,34 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	switch command {
+	case "check-search":
+		searchCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		query := "Найди 3 новых кафе для свидания в центре Москвы. Нужны реальные названия, адреса и источники; неизвестные цены не придумывай."
+		mode := "discover"
+		if len(os.Args) > 2 {
+			query = os.Args[2]
+			mode = "identify"
+		}
+		provider := ai.DeepSeekSearch{Key: cfg.DeepSeekKey, Model: cfg.DeepSeekModel}
+		found, err := provider.Search(searchCtx, ai.SearchRequest{Query: query, City: "Москва", Mode: mode})
+		if err != nil {
+			return fmt.Errorf("native search check failed: %s", err.Error())
+		}
+		fmt.Printf("SEARCH_OK grounded_cards=%d (synthetic/public request; no private collection)\n", len(found.Places))
+		for _, place := range found.Places {
+			fmt.Printf("%s | %s | sources=%d | unknown=%d\n", place.Card.Title, place.Card.Address, len(place.Card.Sources), len(place.Unknown))
+			for _, source := range place.Card.Sources {
+				fmt.Println(source.URL)
+			}
+		}
+		if found.Usage != nil {
+			fmt.Printf("usage input=%d cached=%d output=%d\n", found.Usage.Input, found.Usage.Cached, found.Usage.Output)
+		}
+		if found.Requests != nil {
+			fmt.Printf("search_attempts=%d (not guaranteed successful searches)\n", *found.Requests)
+		}
+		return nil
 	case "check-ai-flow":
 		flowCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
@@ -57,6 +85,7 @@ func run() error {
 		r.AI = &ai.Service{Store: db, Model: cfg.DeepSeekModel, Billing: ai.Billing{USDRUB: cfg.USDRUB, TargetRUB: cfg.BudgetTargetRUB}}
 		if cfg.DeepSeekKey != "" {
 			r.AI.Provider = &ai.DeepSeek{Key: cfg.DeepSeekKey, Model: cfg.DeepSeekModel}
+			r.AI.Search = &ai.DeepSeekSearch{Key: cfg.DeepSeekKey, Model: cfg.DeepSeekModel}
 		}
 		// Retention/clear remain active when the external provider is disabled.
 		if err = r.AI.Prune(ctx); err != nil {

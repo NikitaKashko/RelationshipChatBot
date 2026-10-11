@@ -252,6 +252,12 @@ func (r *Router) collectionMessage(ctx context.Context, b *bot.Bot, m *models.Me
 			r.send(ctx, b, actor, "Пришли /add название. Можно подробнее: /add название | категории через запятую | адрес | ссылка на Яндекс Карты\nСтартовые категории: "+strings.Join(collection.Starters, ", ")+". Можно указать свои.", nil)
 			return true
 		}
+		// Keep the explicit pipe form as the manual alternative; a link or free
+		// description goes through AI identification and a reviewed search card.
+		if !strings.Contains(args, "|") && r.AI != nil && r.AI.Provider != nil {
+			r.aiMessage(ctx, b, actor, "Хочу добавить место: "+args)
+			return true
+		}
 		p := collection.Input{Title: args, Categories: []string{"Другое"}}
 		parts := strings.Split(args, "|")
 		p.Title = strings.TrimSpace(parts[0])

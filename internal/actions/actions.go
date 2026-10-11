@@ -36,12 +36,18 @@ func validate(kind string, raw []byte) error {
 	if strings.HasPrefix(kind, "ai:") {
 		kind = strings.TrimPrefix(kind, "ai:")
 		switch kind {
-		case "place_create", "place_edit", "place_archive", "place_interest", "candidate", "plan_save", "plan_cancel", "plan_not_went", "visit_record", "review", "freeze", "preferences":
+		case "search_save", "place_create", "place_edit", "place_archive", "place_interest", "candidate", "plan_save", "plan_cancel", "plan_not_went", "visit_record", "review", "freeze", "preferences":
 		default:
 			return store.ErrDenied
 		}
 	}
 	switch kind {
+	case "search_save":
+		var p collection.SearchSave
+		if err := decode(raw, &p); err != nil {
+			return err
+		}
+		return collection.Validate(p.Card)
 	case "preferences":
 		return decode(raw, new(store.Preferences))
 	case "notification_names":
@@ -211,6 +217,19 @@ func (s *Service) Apply(ctx context.Context, actor int64, id string) (result jso
 		plans := planning.Service{Store: s.Store}
 		facts := feedback.Service{Store: s.Store}
 		switch kind {
+		case "search_save":
+			var p collection.SearchSave
+			_ = decode([]byte(raw), &p)
+			n, e := cards.Create(ctx, q, actor, p.Card)
+			if e != nil {
+				return e
+			}
+			if p.Candidate {
+				if e = plans.Candidate(ctx, q, actor, planning.Candidate{ID: n}); e != nil {
+					return e
+				}
+			}
+			result, _ = json.Marshal(map[string]int64{"place": n})
 		case "preferences":
 			var p store.Preferences
 			_ = decode([]byte(raw), &p)

@@ -35,6 +35,12 @@ type Input struct {
 	Sources     []Source `json:"sources,omitempty"`
 	Photos      []string `json:"photos,omitempty"`
 }
+
+// SearchSave atomically saves a reviewed search card and, optionally, a candidate.
+type SearchSave struct {
+	Card      Input `json:"card"`
+	Candidate bool  `json:"candidate"`
+}
 type Card struct {
 	Input
 	ID           int64  `json:"id"`
@@ -159,6 +165,45 @@ func canonical(raw string) string {
 	}
 	u.RawQuery = v.Encode()
 	return strings.TrimSuffix(u.String(), "/")
+}
+
+// Match includes archived cards so web search cannot silently reintroduce an
+// archived/refused/frozen place as a fresh ID. All reads stay in the actor scope.
+func (s *Service) Match(ctx context.Context, q store.Query, actor int64, p Input) (*Card, error) {
+	pair, _, _, err := scope(ctx, q, actor)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.QueryContext(ctx, "SELECT id,title,coalesce(address,''),coalesce(map_url,'') FROM places WHERE personal_user_id=? OR pair_id=? ORDER BY id", actor, pair)
+	if err != nil {
+		return nil, err
+	}
+	var matched int64
+	for rows.Next() {
+		var id int64
+		var title, address, link string
+		if err = rows.Scan(&id, &title, &address, &link); err != nil {
+			break
+		}
+		sameLink := p.MapURL != "" && canonical(p.MapURL) == canonical(link)
+		sameAddress := strings.TrimSpace(p.Address) != "" && strings.EqualFold(strings.TrimSpace(p.Title), strings.TrimSpace(title)) && strings.EqualFold(strings.TrimSpace(p.Address), strings.TrimSpace(address))
+		if sameLink || sameAddress {
+			matched = id
+			break
+		}
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	if matched == 0 {
+		return nil, nil
+	}
+	c, err := s.Get(ctx, q, actor, matched)
+	return &c, err
 }
 
 func (s *Service) Create(ctx context.Context, q store.Query, actor int64, p Input) (int64, error) {

@@ -51,7 +51,7 @@ func (s *Service) account(ctx context.Context, id int64, u *Usage, success bool)
 		if u != nil {
 			input, cached, output = u.Input, u.Cached, u.Output
 		}
-		_, err := q.ExecContext(ctx, "UPDATE api_usage SET input_tokens=?,cached_tokens=?,output_tokens=?,estimated_usd=?,estimated_rub=?,uncertain=?,success=? WHERE id=?", input, cached, output, usd, rub, usd == nil, success, id)
+		_, err := q.ExecContext(ctx, "UPDATE api_usage SET input_tokens=?,cached_tokens=?,output_tokens=?,estimated_usd=?,estimated_rub=?,uncertain=CASE WHEN provider='deepseek_search' THEN 1 ELSE ? END,success=? WHERE id=?", input, cached, output, usd, rub, usd == nil, success, id)
 		if err != nil {
 			return err
 		}
@@ -62,13 +62,13 @@ func (s *Service) account(ctx context.Context, id int64, u *Usage, success bool)
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		var total float64
 		var unknown int
-		if err = q.QueryRowContext(ctx, "SELECT coalesce(sum(estimated_rub),0),coalesce(sum(estimated_rub IS NULL),0) FROM api_usage WHERE created_at>=? AND created_at<?", start.Unix(), start.AddDate(0, 1, 0).Unix()).Scan(&total, &unknown); err != nil {
+		if err = q.QueryRowContext(ctx, "SELECT coalesce(sum(estimated_rub),0),coalesce(sum(estimated_rub IS NULL OR uncertain=1),0) FROM api_usage WHERE created_at>=? AND created_at<?", start.Unix(), start.AddDate(0, 1, 0).Unix()).Scan(&total, &unknown); err != nil {
 			return err
 		}
 		if total < s.Billing.TargetRUB {
 			return nil
 		}
-		payload, _ := json.Marshal(map[string]string{"text": fmt.Sprintf("Оценка расходов API за %s достигла %.2f ₽ (ориентир %.2f ₽). Неизвестных по стоимости запросов: %d. Запросы продолжают работать; точный счёт — у провайдера.", start.Format("2006-01"), total, s.Billing.TargetRUB, unknown)})
+		payload, _ := json.Marshal(map[string]string{"text": fmt.Sprintf("Оценка расходов API за %s достигла %.2f ₽ (ориентир %.2f ₽). Запросов с неполной или неизвестной стоимостью: %d. Запросы продолжают работать; точный счёт — у провайдера.", start.Format("2006-01"), total, s.Billing.TargetRUB, unknown)})
 		_, err = q.ExecContext(ctx, `INSERT OR IGNORE INTO notifications(semantic_key,recipient_id,kind,payload,available_at,expires_at,created_at) SELECT 'budget:'||?||':'||id,id,'budget_target',?,?,?,? FROM users WHERE role='owner' AND status='ready'`, start.Format("2006-01"), string(payload), now.Unix(), now.Add(7*24*time.Hour).Unix(), now.Unix())
 		return err
 	})
