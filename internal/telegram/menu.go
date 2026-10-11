@@ -12,13 +12,18 @@ import (
 var menuCommands = map[string]string{
 	"🏠 Меню": "/start", "💡 Копилка": "/places", "📅 Свидания": "/plans",
 	"🤖 Помощник": "/ai", "💌 Внимание": "/attention", "🔗 Пригласить партнёра": "/invite", "⚙️ Настройки": "/settings",
+	"🎟 Пригласить пользователя": "/accessinvite",
 }
 
-func mainKeyboard() models.ReplyKeyboardMarkup {
-	return models.ReplyKeyboardMarkup{Keyboard: [][]models.KeyboardButton{
+func mainKeyboard(owner bool) models.ReplyKeyboardMarkup {
+	keyboard := models.ReplyKeyboardMarkup{Keyboard: [][]models.KeyboardButton{
 		{{Text: "💡 Копилка"}, {Text: "📅 Свидания"}}, {{Text: "🤖 Помощник"}, {Text: "💌 Внимание"}},
 		{{Text: "🔗 Пригласить партнёра"}, {Text: "⚙️ Настройки"}}, {{Text: "🏠 Меню"}},
 	}, ResizeKeyboard: true, IsPersistent: true}
+	if owner {
+		keyboard.Keyboard = append(keyboard.Keyboard, []models.KeyboardButton{{Text: "🎟 Пригласить пользователя"}})
+	}
+	return keyboard
 }
 func navButtons(items ...string) models.InlineKeyboardMarkup {
 	rows := [][]models.InlineKeyboardButton{}
@@ -63,10 +68,15 @@ func (r *Router) showMenu(ctx context.Context, b *bot.Bot, actor int64, paired b
 	if paired {
 		title = "Вы в паре 💛"
 	}
-	r.send(ctx, b, actor, fmt.Sprintf("%s\n%s\n\nВыбирай действие кнопками ниже или пиши помощнику обычным текстом.", title, status), mainKeyboard())
+	u, err := store.UserFor(ctx, r.Store.DB, actor, false)
+	if err != nil {
+		r.send(ctx, b, actor, publicError(err), nil)
+		return
+	}
+	r.send(ctx, b, actor, fmt.Sprintf("%s\n%s\n\nВыбирай действие кнопками ниже или пиши помощнику обычным текстом.", title, status), mainKeyboard(u.Role == "owner"))
 }
 func (r *Router) menuCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) bool {
-	commands := map[string]string{"ai": "/ai", "ai_off": "/ai_off", "newchat": "/newchat", "clearchat": "/clearchat", "start": "/start", "invite": "/invite", "cancelinvite": "/cancelinvite", "location": "/location", "names": "/names", "candidates": "/candidates"}
+	commands := map[string]string{"ai": "/ai", "ai_off": "/ai_off", "newchat": "/newchat", "clearchat": "/clearchat", "start": "/start", "invite": "/invite", "cancelinvite": "/cancelinvite", "location": "/location", "names": "/names", "candidates": "/candidates", "accessinvite": "/accessinvite", "quiet": "/quiet", "quiet_custom": "/quiet_custom", "quiet_cancel": "/quiet_cancel", "quiet_default": "/quiet 23:00-09:00", "quiet_late": "/quiet 00:00-10:00", "quiet_off": "/quiet 00:00-00:00"}
 	if len(q.Data) < 5 || q.Data[:5] != "menu:" {
 		return false
 	}

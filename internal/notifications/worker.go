@@ -177,7 +177,7 @@ func (w *Worker) next(ctx context.Context) (*Message, error) {
 				if float64(allowed.Unix()) >= e.expiry {
 					state = "cancelled"
 				}
-				if _, err = q.ExecContext(ctx, "UPDATE notifications SET available_at=?,status=? WHERE id=?", allowed.Unix(), state, m.ID); err != nil {
+				if _, err = q.ExecContext(ctx, "UPDATE notifications SET available_at=?,status=?,error='quiet hours' WHERE id=?", allowed.Unix(), state, m.ID); err != nil {
 					return err
 				}
 				continue

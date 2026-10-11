@@ -121,11 +121,16 @@ func (r *Router) collectionCallback(ctx context.Context, b *bot.Bot, q *models.C
 
 func (r *Router) saved(ctx context.Context, b *bot.Bot, actor int64, result json.RawMessage) {
 	var out struct {
-		Place int64 `json:"place"`
-		Plan  int64 `json:"plan"`
-		Visit int64 `json:"visit"`
+		QuietSaved bool  `json:"quiet_saved"`
+		Place      int64 `json:"place"`
+		Plan       int64 `json:"plan"`
+		Visit      int64 `json:"visit"`
 	}
 	_ = json.Unmarshal(result, &out)
+	if out.QuietSaved {
+		r.showQuiet(ctx, b, actor)
+		return
+	}
 	if out.Visit != 0 {
 		r.showVisit(ctx, b, actor, out.Visit)
 		return

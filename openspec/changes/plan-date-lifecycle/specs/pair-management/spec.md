@@ -17,6 +17,14 @@ The system SHALL distinguish owner-issued access invitations from partner invita
 - **WHEN** a new user follows a valid partner invitation
 - **THEN** they can register and explicitly confirm pairing with its sender; an already paired sender makes the invitation invalid.
 
+### Requirement: Owner access invitation button
+
+The owner SHALL also have a visible bot button to create an access invitation for a new user, distinct from a partner invitation. The server SHALL reject this operation for non-owner users even if they send its command directly.
+
+#### Scenario: A member requests an owner invitation
+- **WHEN** a non-owner sends the owner invitation command
+- **THEN** no access invitation is created.
+
 ### Requirement: Profile and pairing
 The system SHALL collect personal city, notification name and confirmed personal timezone during onboarding. Pair creation SHALL require recipient confirmation and use invitation links exclusively; friendship codes SHALL NOT be displayed or accepted. A user SHALL belong to at most one active pair.
 

@@ -42,6 +42,12 @@ func validate(kind string, raw []byte) error {
 		}
 	}
 	switch kind {
+	case "quiet_hours":
+		var p QuietHours
+		if err := decode(raw, &p); err != nil {
+			return err
+		}
+		return p.Validate()
 	case "search_save":
 		var p collection.SearchSave
 		if err := decode(raw, &p); err != nil {
@@ -217,6 +223,23 @@ func (s *Service) Apply(ctx context.Context, actor int64, id string) (result jso
 		plans := planning.Service{Store: s.Store}
 		facts := feedback.Service{Store: s.Store}
 		switch kind {
+		case "quiet_hours":
+			var p QuietHours
+			if e = decode([]byte(raw), &p); e != nil {
+				return e
+			}
+			if e = p.Validate(); e != nil {
+				return e
+			}
+			if _, e = q.ExecContext(ctx, "UPDATE users SET quiet_start=?,quiet_end=? WHERE id=?", p.Start, p.End, actor); e != nil {
+				return e
+			}
+			// Re-evaluate messages deferred by the former quiet window. Their
+			// original expiry and delivery status remain intact.
+			if _, e = q.ExecContext(ctx, "UPDATE notifications SET available_at=? WHERE recipient_id=? AND status='pending' AND (error='quiet hours' OR (error IS NULL AND kind IN ('affection','pair_created','partner_registered','location_proposal','freeze_changed','visit_corrected','plan_saved','plan_cancelled','plan_not_went')))", s.Store.Now().Unix(), actor); e != nil {
+				return e
+			}
+			result = json.RawMessage(`{"quiet_saved":true}`)
 		case "search_save":
 			var p collection.SearchSave
 			_ = decode([]byte(raw), &p)

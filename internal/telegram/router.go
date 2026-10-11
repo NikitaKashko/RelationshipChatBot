@@ -191,6 +191,10 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 			return
 		}
 		if u.Status == "ready" {
+			if _, err := r.Store.DB.ExecContext(ctx, "DELETE FROM drafts WHERE user_id=? AND kind='ui_quiet'", actor); err != nil {
+				r.send(ctx, b, actor, publicError(err), nil)
+				return
+			}
 			r.home(ctx, b, actor)
 			return
 		}
@@ -224,8 +228,30 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		r.wizard(ctx, b, actor, w)
 		return
 	}
+	if strings.HasPrefix(text, "/") && !strings.HasPrefix(text, "/quiet") {
+		if _, err := r.Store.DB.ExecContext(ctx, "DELETE FROM drafts WHERE user_id=? AND kind='ui_quiet'", actor); err != nil {
+			r.send(ctx, b, actor, publicError(err), nil)
+			return
+		}
+	}
 	if text == "/settings" {
-		r.send(ctx, b, actor, "Настройки 💛", navButtons("🤖 Помощник", "ai", "🌍 Город пары", "location", "💛 Имена для уведомлений", "names", "📋 Кандидаты свидания", "candidates", "🚫 Отменить приглашения партнёра", "cancelinvite", "🏠 Главное меню", "start"))
+		markup := navButtons("🌙 Тихие часы", "quiet", "🤖 Помощник", "ai", "🌍 Город пары", "location", "💛 Имена для уведомлений", "names", "📋 Кандидаты свидания", "candidates", "🚫 Отменить приглашения партнёра", "cancelinvite", "🏠 Главное меню", "start")
+		if u.Role == "owner" {
+			markup.InlineKeyboard = append([][]models.InlineKeyboardButton{{{Text: "🎟 Пригласить нового пользователя", CallbackData: "menu:accessinvite"}}}, markup.InlineKeyboard...)
+		}
+		r.send(ctx, b, actor, "Настройки 💛", markup)
+		return
+	}
+	if text == "/accessinvite" {
+		token, err := ids.Issue(ctx, actor, "access")
+		if err != nil {
+			r.send(ctx, b, actor, publicError(err), nil)
+			return
+		}
+		r.send(ctx, b, actor, "Приглашение нового пользователя 💛\nhttps://t.me/"+r.Username+"?start="+token+"\nОдноразовая ссылка, действует 7 дней. Она даёт доступ к боту, а пару пользователь создаёт отдельно со своим партнёром.", nil)
+		return
+	}
+	if r.quietMessage(ctx, b, actor, text) {
 		return
 	}
 	if text == "/invite" {

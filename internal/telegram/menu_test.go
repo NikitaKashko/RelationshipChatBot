@@ -80,6 +80,44 @@ func TestEnabledAssistantSurvivesRestartAndMenuDoesNotAskAgain(t *testing.T) {
 	if !strings.Contains(all, "💡 Копилка") || !strings.Contains(all, "is_persistent") {
 		t.Fatal("persistent menu absent", all)
 	}
+	if !strings.Contains(all, "🎟 Пригласить пользователя") {
+		t.Fatal("owner invitation button missing")
+	}
+	memberMenu, _ := json.Marshal(mainKeyboard(false))
+	if strings.Contains(string(memberMenu), "🎟 Пригласить пользователя") {
+		t.Fatal("owner button shown to member")
+	}
+	send("🎟 Пригласить пользователя")
+	var invites int
+	db.DB.QueryRowContext(ctx, "SELECT count(*) FROM invitations WHERE kind='access'").Scan(&invites)
+	if invites != 1 {
+		t.Fatal("owner invitation not created")
+	}
+	_, err = db.DB.ExecContext(ctx, "INSERT INTO users(id,name,code,status,timezone,created_at) VALUES(2,'Member','B','ready','Europe/Moscow',1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.Handle(ctx, b, &models.Update{Message: &models.Message{From: &models.User{ID: 2}, Chat: models.Chat{ID: 2, Type: models.ChatTypePrivate}, Text: "/accessinvite"}})
+	db.DB.QueryRowContext(ctx, "SELECT count(*) FROM invitations WHERE kind='access'").Scan(&invites)
+	if invites != 1 {
+		t.Fatal("member issued access invitation")
+	}
+	send("/quiet_custom")
+	send("22:30–08:30")
+	var start string
+	db.DB.QueryRowContext(ctx, "SELECT quiet_start FROM users WHERE id=1").Scan(&start)
+	if start != "23:00" {
+		t.Fatal("quiet hours changed before confirmation")
+	}
+	var quietDraft string
+	if err = db.DB.QueryRowContext(ctx, "SELECT id FROM drafts WHERE user_id=1 AND kind='quiet_hours' AND applied_at IS NULL").Scan(&quietDraft); err != nil {
+		t.Fatal(err)
+	}
+	router.Handle(ctx, b, &models.Update{CallbackQuery: &models.CallbackQuery{ID: "savequiet", From: models.User{ID: 1}, Data: "save:" + quietDraft, Message: models.MaybeInaccessibleMessage{Message: &models.Message{Chat: models.Chat{ID: 1, Type: models.ChatTypePrivate}}}}})
+	db.DB.QueryRowContext(ctx, "SELECT quiet_start FROM users WHERE id=1").Scan(&start)
+	if start != "22:30" {
+		t.Fatal("quiet hours not saved", start)
+	}
 	var n int
 	if err = db.DB.QueryRowContext(ctx, "SELECT count(*) FROM drafts WHERE kind='consent' AND applied_at IS NULL").Scan(&n); err != nil || n != 0 {
 		t.Fatal("repeat consent drafts", n, err)

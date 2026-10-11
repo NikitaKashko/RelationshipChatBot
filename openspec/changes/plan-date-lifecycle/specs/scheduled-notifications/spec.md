@@ -29,6 +29,10 @@ Each user SHALL have personal quiet hours defaulting to 23:00–09:00 in their t
 - **WHEN** the pair-scheduled feedback falls inside a recipient's quiet hours
 - **THEN** delivery waits for their next permitted time and remains subject to expiry.
 
+#### Scenario: Changing personal quiet hours
+- **WHEN** a user opens Settings and Quiet hours
+- **THEN** the bot shows their current interval and timezone, offers presets, custom HH:MM input and disabling, saves only after confirmation, and re-evaluates quiet-deferred pending events without bringing future scheduled reminders forward.
+
 ### Requirement: Reminder and timezone changes
 The system SHALL offer one disableable reminder two hours before plan start. Changing the approved pair timezone SHALL recompute future feedback schedules without changing the actual instants of saved plans.
 
