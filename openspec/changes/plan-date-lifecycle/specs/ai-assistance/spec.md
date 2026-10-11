@@ -1,0 +1,65 @@
+## Purpose
+
+Сделать обычную переписку главным способом поиска и планирования, сохранив проверяемые результаты, личную приватность и явное сохранение изменений.
+
+## ADDED Requirements
+
+### Requirement: Conversational primary interface
+The system SHALL use DeepSeek for ordinary-text requests without required commands, retrieve current authorized collection data automatically and support contextual followup constraints. Buttons and manual editing SHALL remain available as secondary interaction.
+
+#### Scenario: Refining suggestions
+- **WHEN** the user follows a suggestion with «подешевле и без кино»
+- **THEN** the new selection uses the current conversation and revised conditions without asking for already known data.
+
+### Requirement: Explicit constraints
+Explicit request constraints SHALL be mandatory. Unset constraints SHALL not be imposed. Unknown price, distance or hours SHALL not be represented as confirmed compliance; only missing essential action details SHALL be clarified.
+
+#### Scenario: Budget ceiling
+- **WHEN** the user sets a ceiling and a place has no verified price
+- **THEN** it is separated as budget-unverified rather than promised to fit; when no budget is set the bot does not require one merely to generate ideas.
+
+### Requirement: Collection default and eligibility
+Automatic suggestions SHALL default to the collection, prioritize mutual interest and exclude archived, frozen or personally refused places. Unevaluated places SHALL remain eligible with unknown interest labeled. Empty matches SHALL explain why and offer changed conditions, manual frozen choices or explicit internet search.
+
+#### Scenario: Everything frozen
+- **WHEN** no eligible collection place matches
+- **THEN** the bot offers next actions and does not silently unfreeze places or call internet search.
+
+### Requirement: Explicit web search
+Internet search SHALL run only after an explicit request or search button. Results SHALL offer three to five grounded cards when enough results exist, explain relevance, show sources and unknown data, and provide ideas, candidates and more-results actions without automatic saving.
+
+#### Scenario: Fewer trustworthy results
+- **WHEN** search supports only two places
+- **THEN** the bot shows two with a limitation explanation instead of inventing additional establishments.
+
+### Requirement: Confirmed mutations
+AI SHALL prepare versioned drafts for collection, plan, review and persistent-preference changes. A user action SHALL commit changes; model output alone SHALL not authorize writes. Sensitive deletion SHALL require its separate explicit confirmation.
+
+#### Scenario: Search-page instruction
+- **WHEN** retrieved content tells the model to change data or reveal secrets
+- **THEN** it is treated as source data, cannot expand permissions, and cannot commit a mutation.
+
+### Requirement: Scoped data and consent
+Pair-data use SHALL require both partners' AI consent. DeepSeek SHALL receive only needed place fields, plan dates, permitted preferences and the caller's conversation. Telegram identifiers, notification names and photos SHALL be excluded; private notes and review text SHALL require separate permission.
+
+#### Scenario: Consent absent or withdrawn
+- **WHEN** either partner lacks pair AI consent
+- **THEN** pair-data requests are not sent and manual collection and planning remain usable.
+
+### Requirement: Private conversation retention
+Each user SHALL have a private contextual conversation retained for thirty days, with clear-history and new-conversation actions. Confirmed structured data SHALL remain separate. Partners and the owner panel SHALL not expose those personal texts.
+
+#### Scenario: Clear history
+- **WHEN** a user clears their AI history
+- **THEN** conversation context is removed while saved plans, places and confirmed preferences remain.
+
+### Requirement: Cost visibility and errors
+AI and search SHALL initially have no application request quotas or hard spending cutoff. The system SHALL track estimated spending, alert the owner at the 500 RUB monthly target and retain future optional quota configuration. Failed paid calls SHALL repeat only after an explicit user retry.
+
+#### Scenario: Target reached
+- **WHEN** estimated AI and search spending crosses the monthly target
+- **THEN** the owner is notified but subsequent requests are not stopped by that target.
+
+#### Scenario: Provider failure
+- **WHEN** DeepSeek or search fails
+- **THEN** the bot preserves the request and draft, offers «Повторить», makes no automatic paid retry and keeps manual features usable.
