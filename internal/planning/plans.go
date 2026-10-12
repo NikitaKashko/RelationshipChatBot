@@ -19,6 +19,8 @@ import (
 type Service struct{ Store *store.Store }
 type Stale struct{ ID int64 }
 
+var ErrPairTimezone = errors.New(texts.T("internal.planning.plans.017"))
+
 func (e *Stale) Error() string {
 	return store.ErrConflict.Error()
 }
@@ -252,7 +254,7 @@ func (s *Service) Save(ctx context.Context, q store.Query, actor int64, p Input)
 		return 0, err
 	}
 	if !pairTimezone.Valid && !p.Draft {
-		return 0, errors.New(texts.T("internal.planning.plans.017"))
+		return 0, ErrPairTimezone
 	}
 	changed := []string{texts.T("internal.planning.plans.018")}
 	version := int64(1)

@@ -295,6 +295,10 @@ func (r *Router) collectionMessage(ctx context.Context, b *bot.Bot, m *models.Me
 		r.send(ctx, b, actor, texts.T("internal.telegram.collection.027"), r.dateButtons(ctx, actor))
 		return true
 	case "/location":
+		if args == "" {
+			r.startEntry(ctx, b, actor, entry{Kind: "pair_location"})
+			return true
+		}
 		parts := strings.Split(args, "|")
 		if len(parts) != 2 {
 			r.send(ctx, b, actor, texts.T("internal.telegram.collection.028"), nil)

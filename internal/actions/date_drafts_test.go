@@ -2,10 +2,40 @@ package actions_test
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
 	"testing"
 	"time"
 )
+
+func TestApprovedDateRequiresConfirmedPairTimezone(t *testing.T) {
+	d := fixture(t)
+	if _, err := d.db.DB.ExecContext(d.ctx, "UPDATE pairs SET city=NULL,timezone=NULL WHERE id=?", d.pair); err != nil {
+		t.Fatal(err)
+	}
+	p := planning.Input{Draft: true, Title: "Поездка в Выборг", Timezone: "Europe/Moscow"}
+	result := d.apply(t, 1, "plan_save", p)
+	var out struct{ Plan int64 }
+	if err := json.Unmarshal(result, &out); err != nil {
+		t.Fatal(err)
+	}
+	p.ID = out.Plan
+	p.Version = 1
+	p.Draft = false
+	p.Date = "2026-10-18"
+	draft := d.prepare(t, 1, "plan_save", p)
+	if _, err := d.act.Apply(d.ctx, 1, draft); !errors.Is(err, planning.ErrPairTimezone) {
+		t.Fatalf("expected pair timezone prerequisite, got %v", err)
+	}
+	service := planning.Service{Store: d.db}
+	saved, err := service.Get(d.ctx, d.db.DB, 1, out.Plan)
+	if err != nil || !saved.Draft || saved.Version != 1 {
+		t.Fatal("failed approval changed the draft", saved, err)
+	}
+	if d.count(t, "SELECT count(*) FROM notifications WHERE kind IN ('reminder','feedback')") != 0 {
+		t.Fatal("failed approval scheduled notifications")
+	}
+}
 
 func TestSharedDraftApprovalWithoutPlacesOrTimes(t *testing.T) {
 	d := fixture(t)

@@ -57,7 +57,7 @@ func (r *Router) sendAI(ctx context.Context, b *bot.Bot, actor int64, text strin
 	}
 }
 func publicError(err error) string {
-	if errors.Is(err, ErrAnswer) || errors.Is(err, ErrTimezone) {
+	if errors.Is(err, ErrAnswer) || errors.Is(err, ErrTimezone) || errors.Is(err, planning.ErrPairTimezone) {
 		return err.Error()
 	}
 	if errors.Is(err, store.ErrDenied) {
@@ -181,6 +181,9 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 			r.saved(ctx, b, q.From.ID, result)
 		} else {
 			r.duplicate(ctx, b, q.From.ID, err)
+			if errors.Is(err, planning.ErrPairTimezone) {
+				r.send(ctx, b, q.From.ID, texts.T("internal.telegram.router.039"), button(texts.T("internal.telegram.router.022"), "menu:location"))
+			}
 			var stale *planning.Stale
 			if errors.As(err, &stale) {
 				r.send(ctx, b, q.From.ID, texts.T("internal.telegram.router.016"), nil)

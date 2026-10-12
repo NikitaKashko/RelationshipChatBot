@@ -330,6 +330,10 @@ var requiredFormats = map[string]string{
 	"internal.telegram.entry.029":         "",
 	"internal.telegram.entry.030":         "",
 	"internal.telegram.entry.031":         "",
+	"internal.telegram.entry.032":         "",
+	"internal.telegram.entry.033":         "",
+	"internal.telegram.entry.034":         "",
+	"internal.telegram.entry.035":         "",
 	"internal.telegram.feedback.001":      "%d",
 	"internal.telegram.feedback.002":      "%d%s%d%d",
 	"internal.telegram.feedback.003":      "",
@@ -432,5 +436,6 @@ var requiredFormats = map[string]string{
 	"internal.telegram.router.036":        "",
 	"internal.telegram.router.037":        "",
 	"internal.telegram.router.038":        "",
+	"internal.telegram.router.039":        "",
 	"internal.telegram.telegram_name.001": "",
 }

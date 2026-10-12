@@ -18,10 +18,11 @@ import (
 )
 
 type entry struct {
-	Kind string
-	Step int
-	Card collection.Input
-	Plan planning.Input
+	Kind     string
+	Step     int
+	Card     collection.Input
+	Plan     planning.Input
+	Location identity.Location
 }
 
 func (r *Router) addOptions(ctx context.Context, b *bot.Bot, actor int64) {
@@ -66,7 +67,7 @@ func (r *Router) startEntry(ctx context.Context, b *bot.Bot, actor int64, e entr
 			r.send(ctx, b, actor, texts.T("internal.telegram.entry.012"), nil)
 			return
 		}
-		if e.Plan.Timezone == "" {
+		if (e.Kind == "plan" || e.Kind == "date") && e.Plan.Timezone == "" {
 			var zone *string
 			if err = r.Store.DB.QueryRowContext(ctx, "SELECT timezone FROM pairs WHERE id=?", pair).Scan(&zone); err != nil {
 				r.send(ctx, b, actor, publicError(err), nil)
@@ -109,10 +110,15 @@ func (r *Router) saveEntry(ctx context.Context, b *bot.Bot, actor int64, e entry
 		prompt = []string{texts.T("internal.telegram.entry.015"), texts.T("internal.telegram.entry.016"), texts.T("internal.telegram.entry.017"), texts.T("internal.telegram.entry.018")}[e.Step]
 	case "date":
 		prompt = texts.T("internal.telegram.entry.019")
+	case "pair_location":
+		prompt = []string{texts.T("internal.telegram.entry.032"), texts.T("internal.telegram.entry.033")}[e.Step]
 	default:
 		prompt = []string{texts.T("internal.telegram.entry.020"), texts.T("internal.telegram.entry.021"), texts.T("internal.telegram.entry.022"), texts.T("internal.telegram.entry.023")}[e.Step]
 	}
 	markup := navButtons(texts.T("internal.telegram.entry.024"), "entry_cancel")
+	if e.Kind == "pair_location" && e.Step == 1 {
+		markup = models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: texts.T("internal.telegram.router.007"), CallbackData: "entry:location_moscow"}}, {{Text: texts.T("internal.telegram.entry.024"), CallbackData: "menu:entry_cancel"}}}}
+	}
 	if (e.Kind == "card" && e.Step >= 2) || (e.Kind == "plan" && (e.Step == 1 || e.Step == 2)) {
 		markup = navButtons(texts.T("internal.telegram.entry.025"), "skip", texts.T("internal.telegram.entry.024"), "entry_cancel")
 	}
@@ -123,6 +129,10 @@ func (r *Router) entryCallback(ctx context.Context, b *bot.Bot, q *models.Callba
 		return false
 	}
 	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID})
+	if q.Data == "entry:location_moscow" {
+		r.entryMessage(ctx, b, q.From.ID, "Europe/Moscow")
+		return true
+	}
 	parts := strings.Split(q.Data, ":")
 	if len(parts) != 3 {
 		return true
@@ -252,6 +262,24 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 		e.Plan.Start = ""
 		e.Plan.End = ""
 		done = true
+	case "pair_location":
+		switch e.Step {
+		case 0:
+			if value == "" || len([]rune(value)) > 100 || strings.ContainsAny(value, "\r\n") {
+				r.send(ctx, b, actor, texts.T("internal.telegram.entry.034"), nil)
+				return true
+			}
+			e.Location.City = value
+		case 1:
+			zone, err := normalizeTimezone(value)
+			if err != nil {
+				r.send(ctx, b, actor, texts.T("internal.telegram.entry.035"), nil)
+				return true
+			}
+			e.Location.Timezone = zone
+			done = true
+		}
+		e.Step++
 	case "plan":
 		switch e.Step {
 		case 0:
@@ -284,7 +312,9 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 		e.Step++
 	}
 	if done {
-		if e.Kind == "card" {
+		if e.Kind == "pair_location" {
+			r.draft(ctx, b, actor, "location_proposal", e.Location, texts.T("internal.telegram.collection.029")+e.Location.City+texts.T("internal.telegram.collection.030")+e.Location.Timezone)
+		} else if e.Kind == "card" {
 			if err := collection.Validate(e.Card); err != nil {
 				e.Step = 3
 				r.saveEntry(ctx, b, actor, e)
