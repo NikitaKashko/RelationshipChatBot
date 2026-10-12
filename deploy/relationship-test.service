@@ -10,7 +10,7 @@ Group=relationshiptest
 WorkingDirectory=/var/lib/relationshipbot-test
 EnvironmentFile=/etc/relationshipbot-test/test.env
 Environment=GOMEMLIMIT=64MiB
-ExecStart=/opt/relationshipbot/relationshipbot serve-test
+ExecStart=/opt/relationshipbot/relationshipbot-test serve-test
 Restart=on-failure
 RestartSec=10
 UMask=0077

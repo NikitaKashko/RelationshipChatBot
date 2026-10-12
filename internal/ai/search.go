@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,11 +17,12 @@ import (
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 )
 
-type SearchCard struct{ Preview, Ideas, Candidates string }
+type SearchCard struct{ Preview, SaveToken, MapURL string }
 type SearchButton struct{ Label, Token string }
 type searchTurn struct {
 	text, conversation string
 	pair               int64
+	mode               string
 	attempted          bool
 	value              any
 }
@@ -37,6 +40,9 @@ func searchPermission(text string) (allow, refuse bool) {
 		}
 	}
 	if len(links.FindAllString(text, -1)) > 0 || strings.HasPrefix(t, "/search ") {
+		return true, false
+	}
+	if strings.Contains(t, "хочу добавить место:") {
 		return true, false
 	}
 	verb := false
@@ -75,7 +81,7 @@ func safeSearchLinks(text string) bool {
 
 func (s *Service) directSearch(ctx context.Context, actor int64, turn *searchTurn, result Result) (Result, error) {
 	mode := "discover"
-	if len(links.FindAllString(turn.text, -1)) > 0 || strings.Contains(turn.text, "Хочу добавить место:") {
+	if len(links.FindAllString(turn.text, -1)) > 0 || strings.Contains(strings.ToLower(turn.text), "хочу добавить место:") {
 		mode = "identify"
 	}
 	args, _ := json.Marshal(map[string]string{"mode": mode})
@@ -91,11 +97,10 @@ func (s *Service) directSearch(ctx context.Context, actor int64, turn *searchTur
 	}
 	result.Text = "Не удалось найти заполненную карточку. Уточни название, город или адрес."
 	if data, ok := value.(map[string]any); ok {
-		if summary, ok := data["summary"].(string); ok && summary != "" {
-			result.Text = "ИИ по результатам поиска: " + summary
-		}
 		if len(result.SearchCards) > 0 {
-			result.Text += "\nПроверь карточки ниже. Пока ничего не сохранено."
+			result.Text = searchResultTitle(mode, len(result.SearchCards))
+		} else if summary, ok := data["summary"].(string); ok && summary != "" {
+			result.Text = summary
 		}
 	} else if data, ok := value.(map[string]string); ok {
 		switch data["status"] {
@@ -117,8 +122,9 @@ func (s *Service) directSearch(ctx context.Context, actor int64, turn *searchTur
 	return result, err
 }
 
-// The model can request a search, but only the current human message or a
-// single-use human button authorizes a network call. Old chat/source text cannot.
+// One AI consent covers provider use. The current message still controls whether
+// discover mode may use the network; identify mode represents a concrete place
+// link/description selected by the model. Retrieved pages never grant permission.
 func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn *searchTurn, result *Result) (any, error) {
 	var p struct {
 		City string `json:"city"`
@@ -130,6 +136,7 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 	if p.Mode != "discover" && p.Mode != "identify" {
 		return nil, store.ErrDenied
 	}
+	turn.mode = p.Mode
 	allow, refuse := searchPermission(turn.text)
 	if refuse {
 		return map[string]string{"status": "internet_forbidden_by_user"}, nil
@@ -137,15 +144,8 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 	if s.Search == nil {
 		return map[string]string{"status": "search_not_configured"}, nil
 	}
-	if !allow {
-		if result.SearchButton == nil {
-			token, err := s.retry(ctx, actor, turn.pair, turn.conversation, "/search "+turn.text)
-			if err != nil {
-				return nil, err
-			}
-			result.SearchButton = &SearchButton{Label: "Найти место в интернете", Token: token}
-		}
-		return map[string]string{"status": "explicit_permission_needed", "message": "Предложена кнопка поиска; ничего не найдено и не сохранено."}, nil
+	if !allow && p.Mode == "discover" {
+		return map[string]string{"status": "internet_not_requested", "message": "Интернет-поиск не запускался: попроси найти новые места в интернете."}, nil
 	}
 	if !safeSearchLinks(turn.text) {
 		return map[string]string{"status": "unsafe_link", "message": "Нужна публичная HTTPS-ссылка без пароля; можно написать название и город."}, nil
@@ -209,6 +209,13 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 	metadata := []map[string]any{}
 	excluded := 0
 	for _, place := range found.Places {
+		limit := 5
+		if p.Mode == "identify" {
+			limit = 3
+		}
+		if len(prepared)+len(result.Places) >= limit {
+			break
+		}
 		card := place.Card
 		if len(card.Sources) == 0 || len(card.Photos) > 0 {
 			continue
@@ -233,16 +240,11 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 			metadata = append(metadata, map[string]any{"already_in_collection": true, "id": match.ID, "title": match.Title, "frozen_until": match.FreezeUntil, "refused": match.Refused, "archived": match.Archived})
 			continue
 		}
-		preview := "Найдено с помощью ИИ — проверь карточку перед сохранением.\n" + collection.Render(collection.Card{Input: card, Author: "ты, если добавишь"})
-		if place.Why != "" {
-			preview += "\nПочему подходит: " + limitText(place.Why, 250)
+		mapURL := card.MapURL
+		if mapURL == "" {
+			mapURL = "https://yandex.ru/maps/?text=" + url.QueryEscape(strings.TrimSpace(card.Title+" "+card.City+" "+card.Address))
 		}
-		if len(place.Unknown) > 0 {
-			preview += "\nНе подтверждено: " + strings.Join(place.Unknown, ", ")
-		}
-		if card.MapURL == "" {
-			preview += "\nПоиск на Яндекс Картах (не точная отметка): https://yandex.ru/maps/?text=" + url.QueryEscape(card.Title+" "+card.City+" "+card.Address)
-		}
+		preview := renderSearchPreview(card, place.Why, mapURL)
 		// Persist the caution and relevance together with the reviewed card, so
 		// a saved incomplete card never turns into an apparently verified record.
 		card.Description = strings.TrimSpace(card.Description + "\nПодготовлено ИИ по источникам; актуальность нужно проверить.")
@@ -258,8 +260,7 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 		if err != nil {
 			return nil, err
 		}
-		candidate := ""
-		prepared = append(prepared, SearchCard{Preview: preview, Ideas: idea, Candidates: candidate})
+		prepared = append(prepared, SearchCard{Preview: preview, SaveToken: idea, MapURL: mapURL})
 		metadata = append(metadata, map[string]any{"title": card.Title, "address": card.Address, "city": card.City, "price": card.Price, "price_basis": card.PriceBasis, "unknown": place.Unknown})
 	}
 	result.SearchCards = prepared
@@ -280,4 +281,47 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 		result.SearchButton = &SearchButton{Label: "Ещё варианты", Token: token}
 	}
 	return turn.value, nil
+}
+
+func searchResultTitle(mode string, count int) string {
+	if mode == "identify" {
+		if count == 1 {
+			return "Нашёл место — проверь карточку перед добавлением 💛"
+		}
+		return fmt.Sprintf("Нашёл %d варианта — выбери нужную карточку 💛", count)
+	}
+	return fmt.Sprintf("Нашёл %d вариантов. Пока ничего не добавлено 💛", count)
+}
+
+func renderSearchPreview(card collection.Input, why, mapURL string) string {
+	lines := []string{"📍 " + card.Title}
+	if len(card.Categories) > 0 {
+		lines = append(lines, "Категории: "+strings.Join(card.Categories, ", "))
+	}
+	if card.Address != "" {
+		lines = append(lines, "Адрес: "+card.Address)
+	}
+	if card.Description != "" {
+		lines = append(lines, card.Description)
+	}
+	if card.Price != nil {
+		basis := "на человека"
+		if card.PriceBasis == "couple" {
+			basis = "на двоих"
+		}
+		lines = append(lines, "Цена: "+strconv.FormatFloat(*card.Price, 'f', -1, 64)+" ₽ "+basis)
+	}
+	if why != "" {
+		lines = append(lines, "Почему подходит: "+limitText(why, 250))
+	}
+	if mapURL != "" {
+		lines = append(lines, "🗺 Яндекс Карты: "+mapURL)
+	}
+	for i, source := range card.Sources {
+		if i >= 2 {
+			break
+		}
+		lines = append(lines, "Источник: "+source.URL)
+	}
+	return strings.Join(lines, "\n")
 }

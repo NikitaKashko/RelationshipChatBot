@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/actions"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/collection"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 )
@@ -205,6 +207,46 @@ func TestConcurrentPairAcceptances(t *testing.T) {
 	}
 	if successes != 1 || f.count(t, "SELECT count(*) FROM pairs") != 1 {
 		t.Fatal("race created multiple pairs")
+	}
+}
+
+func TestPairCreationMergesBothPersonalCollectionsAndPreservesAuthors(t *testing.T) {
+	f := setup(t)
+	f.member(t, 2)
+	svc := actions.Service{Store: f.db}
+	for actor, title := range map[int64]string{1: "Парк первого", 2: "Кафе второго"} {
+		raw, _ := json.Marshal(collection.Input{Title: title, Categories: []string{"Идея"}})
+		draft, err := svc.Prepare(f.ctx, actor, "place_create", raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = svc.Apply(f.ctx, actor, draft); err != nil {
+			t.Fatal(err)
+		}
+	}
+	token, err := f.ids.Issue(f.ctx, 1, "partner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.ids.Claim(f.ctx, 2, "User", token); err != nil {
+		t.Fatal(err)
+	}
+	pair, err := f.ids.Accept(f.ctx, 2, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, actor := range []int64{1, 2} {
+		list, err := (&collection.Service{Store: f.db}).List(f.ctx, actor, "all")
+		if err != nil || len(list) != 2 {
+			t.Fatalf("actor %d did not get merged collection: len=%d err=%v", actor, len(list), err)
+		}
+	}
+	where := " WHERE pair_id=" + strconv.FormatInt(pair, 10)
+	if f.count(t, "SELECT count(*) FROM places"+where+" AND personal_user_id IS NULL") != 2 {
+		t.Fatal("personal places were not moved to pair scope")
+	}
+	if f.count(t, "SELECT count(DISTINCT author_id) FROM places"+where) != 2 {
+		t.Fatal("original place authors were not preserved")
 	}
 }
 

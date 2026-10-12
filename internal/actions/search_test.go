@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -32,7 +33,7 @@ func searchModel(s *ai.Service) {
 	})
 }
 
-func TestSearchRequiresCurrentHumanPermissionAndAtomicSave(t *testing.T) {
+func TestOneAIConsentCoversSearchAndSaveStaysAtomic(t *testing.T) {
 	d := fixture(t)
 	grant(t, d)
 	s := ai.Service{Store: d.db, Model: "deepseek-flash", Billing: ai.Billing{USDRUB: 100, TargetRUB: 500}}
@@ -46,28 +47,21 @@ func TestSearchRequiresCurrentHumanPermissionAndAtomicSave(t *testing.T) {
 		return nativeFound(), nil
 	})
 	result, err := s.Converse(d.ctx, 1, "Хочу добавить Кафе")
-	if err != nil || calls != 0 || result.SearchButton == nil || len(result.SearchCards) != 0 {
-		t.Fatal("implicit paid search", err, calls)
-	}
-	if _, err = s.Retry(d.ctx, 2, result.SearchButton.Token); !errors.Is(err, store.ErrDenied) {
-		t.Fatal("foreign search button")
-	}
-	result, err = s.Retry(d.ctx, 1, result.SearchButton.Token)
 	if err != nil || calls != 1 || len(result.SearchCards) != 1 || d.count(t, "SELECT count(*) FROM places") != 0 {
-		t.Fatal("not reviewed before save", err, calls)
+		t.Fatal("consented search did not return reviewed card", err, calls)
 	}
 	card := result.SearchCards[0]
-	if card.Ideas == "" || card.Candidates != "" || !strings.Contains(card.Preview, "Источник:") || !strings.Contains(card.Preview, "не точная отметка") {
+	if card.SaveToken == "" || !strings.Contains(card.Preview, "Источник:") || !strings.Contains(card.MapURL, "yandex.ru/maps/?text=") {
 		t.Fatal("missing buttons/sources/map fallback")
 	}
-	if _, err = d.act.Apply(d.ctx, 2, card.Ideas); !errors.Is(err, store.ErrDenied) {
+	if _, err = d.act.Apply(d.ctx, 2, card.SaveToken); !errors.Is(err, store.ErrDenied) {
 		t.Fatal("partner committed private preview")
 	}
-	first, err := d.act.Apply(d.ctx, 1, card.Ideas)
+	first, err := d.act.Apply(d.ctx, 1, card.SaveToken)
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := d.act.Apply(d.ctx, 1, card.Ideas)
+	again, err := d.act.Apply(d.ctx, 1, card.SaveToken)
 	if err != nil || string(first) != string(again) {
 		t.Fatal("callback replay")
 	}
@@ -77,13 +71,59 @@ func TestSearchRequiresCurrentHumanPermissionAndAtomicSave(t *testing.T) {
 	if d.count(t, "SELECT count(*) FROM api_usage WHERE provider='deepseek_search' AND search_requests=2 AND uncertain=1 AND estimated_usd IS NOT NULL") != 1 {
 		t.Fatal("lost uncertain search costs")
 	}
-	if _, err = d.act.Apply(d.ctx, 1, card.Ideas); err != nil {
+	if _, err = d.act.Apply(d.ctx, 1, card.SaveToken); err != nil {
 		t.Fatal("duplicate silently added")
 	}
-	// A previous explicit request must not grant a later unrelated turn web access.
-	result, err = s.Converse(d.ctx, 1, "Кафе другое")
-	if err != nil || calls != 1 || result.SearchButton == nil {
-		t.Fatal("old chat authorized new search")
+	// The current message can still explicitly forbid the network.
+	result, err = s.Converse(d.ctx, 1, "Кафе другое, без интернета")
+	if err != nil || calls != 1 || len(result.SearchCards) != 0 {
+		t.Fatal("network refusal ignored")
+	}
+}
+
+func TestExplicitInternetSearchReturnsAtMostFiveCompactCardsWithoutModelParaphrase(t *testing.T) {
+	d := fixture(t)
+	grant(t, d)
+	modelCalls := 0
+	s := ai.Service{Store: d.db, Model: "deepseek-flash"}
+	s.Provider = fakeProvider(func(context.Context, []ai.Message, []any) (ai.Completion, error) {
+		modelCalls++
+		return answer("лишний длинный пересказ"), nil
+	})
+	s.Search = fakeSearch(func(_ context.Context, r ai.SearchRequest) (ai.SearchCompletion, error) {
+		if r.Mode != "discover" || r.City != "Москва" {
+			t.Fatalf("wrong direct search request: %+v", r)
+		}
+		out := ai.SearchCompletion{Summary: "длинное описание от поисковой модели"}
+		for i := 1; i <= 6; i++ {
+			out.Places = append(out.Places, ai.FoundPlace{Card: collection.Input{
+				Title:      fmt.Sprintf("Место %d", i),
+				Categories: []string{"Погулять"},
+				City:       "Москва",
+				Sources:    []collection.Source{{URL: fmt.Sprintf("https://example.com/place-%d", i), RetrievedAt: 1}},
+			}, Why: "подходит для свидания", Unknown: []string{"адрес", "бюджет", "часы работы"}})
+		}
+		return out, nil
+	})
+	result, err := s.Converse(d.ctx, 1, "Найди в интернете интересные места для свидания")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if modelCalls != 0 || len(result.SearchCards) != 5 {
+		t.Fatalf("expected direct five-card result, model=%d cards=%d", modelCalls, len(result.SearchCards))
+	}
+	if result.Text != "Нашёл 5 вариантов. Пока ничего не добавлено 💛" {
+		t.Fatalf("unexpected result header: %q", result.Text)
+	}
+	for _, card := range result.SearchCards {
+		if card.SaveToken == "" || !strings.Contains(card.MapURL, "yandex.ru/maps/?text=") {
+			t.Fatal("card lacks save token or Yandex map", card)
+		}
+		for _, hidden := range []string{"Адрес:", "Цена:", "часы работы", "бюджет"} {
+			if strings.Contains(card.Preview, hidden) {
+				t.Fatalf("unknown field %q leaked into compact card: %s", hidden, card.Preview)
+			}
+		}
 	}
 }
 
@@ -162,7 +202,7 @@ func TestSearchCandidateRollbackAndSourceInjectionCannotMutate(t *testing.T) {
 		t.Fatal("tool/source injection or paid repeat", err, calls)
 	}
 	var p collection.SearchSave
-	if err = json.Unmarshal([]byte(draftPayload(t, d, result.SearchCards[0].Ideas)), &p); err != nil {
+	if err = json.Unmarshal([]byte(draftPayload(t, d, result.SearchCards[0].SaveToken)), &p); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(p.Card.Description, "актуальность") {
@@ -220,7 +260,7 @@ func TestPersonalSearchCanSaveNewCardWithoutPartnerConsent(t *testing.T) {
 	if err != nil || calls != 1 || len(result.SearchCards) != 1 {
 		t.Fatal("personal search blocked", err, calls)
 	}
-	id := result.SearchCards[0].Ideas
+	id := result.SearchCards[0].SaveToken
 	if _, err = d.act.Apply(d.ctx, 1, id); err != nil {
 		t.Fatal("personal card save blocked", err)
 	}

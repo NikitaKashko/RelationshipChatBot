@@ -25,7 +25,7 @@ func (r *Router) aiResult(ctx context.Context, b *bot.Bot, actor int64, result a
 		markup = button("Повторить", "ai_retry:"+result.Retry)
 	}
 	if result.Text != "" {
-		r.send(ctx, b, actor, result.Text, markup)
+		r.sendAI(ctx, b, actor, result.Text, markup)
 	}
 	seen := map[int64]bool{}
 	for _, id := range result.Places {
@@ -42,23 +42,50 @@ func (r *Router) aiResult(ctx context.Context, b *bot.Bot, actor int64, result a
 		r.send(ctx, b, actor, draft.Preview, button(label, "save:"+draft.ID))
 	}
 	for _, card := range result.SearchCards {
-		rows := [][]models.InlineKeyboardButton{{{Text: "Добавить в копилку", CallbackData: "save:" + card.Ideas}}}
-		r.send(ctx, b, actor, card.Preview, models.InlineKeyboardMarkup{InlineKeyboard: rows})
+		rows := [][]models.InlineKeyboardButton{{{Text: "➕ Добавить в коллекцию", CallbackData: "save:" + card.SaveToken}}}
+		if card.MapURL != "" {
+			rows = append(rows, []models.InlineKeyboardButton{{Text: "🗺 Открыть в Яндекс Картах", URL: card.MapURL}})
+		}
+		large, above := true, true
+		params := &bot.SendMessageParams{ChatID: actor, Text: card.Preview, ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: rows}}
+		if card.MapURL != "" {
+			params.LinkPreviewOptions = &models.LinkPreviewOptions{URL: &card.MapURL, PreferLargeMedia: &large, ShowAboveText: &above}
+		}
+		if _, sendErr := b.SendMessage(ctx, params); sendErr != nil {
+			r.send(ctx, b, actor, card.Preview, models.InlineKeyboardMarkup{InlineKeyboard: rows})
+		}
 	}
 	if result.SearchButton != nil {
-		r.send(ctx, b, actor, "Поиск запускается по твоему запросу.", button(result.SearchButton.Label, "ai_retry:"+result.SearchButton.Token))
+		r.send(ctx, b, actor, "Хочешь посмотреть ещё варианты?", button(result.SearchButton.Label, "ai_search:"+result.SearchButton.Token))
 	}
 }
 func (r *Router) aiCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) bool {
-	if !strings.HasPrefix(q.Data, "ai_retry:") {
+	search := strings.HasPrefix(q.Data, "ai_search:")
+	if !search && !strings.HasPrefix(q.Data, "ai_retry:") {
 		return false
 	}
-	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID})
+	answer := ""
+	if search {
+		answer = "Начал поиск"
+	}
+	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID, Text: answer})
 	if r.AI == nil {
 		r.send(ctx, b, q.From.ID, "ИИ ещё не настроен.", nil)
 		return true
 	}
-	result, err := r.AI.Retry(ctx, q.From.ID, strings.TrimPrefix(q.Data, "ai_retry:"))
+	prefix := "ai_retry:"
+	if search {
+		prefix = "ai_search:"
+		if q.Message.Message != nil {
+			_, _ = b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{ChatID: q.Message.Message.Chat.ID, MessageID: q.Message.Message.ID, ReplyMarkup: models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{}}})
+		}
+		r.send(ctx, b, q.From.ID, "Ищу места в интернете 🔎", nil)
+	}
+	result, err := r.AI.Retry(ctx, q.From.ID, strings.TrimPrefix(q.Data, prefix))
+	if search && errors.Is(err, store.ErrConflict) {
+		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID, Text: "Этот поиск уже запущен"})
+		return true
+	}
 	r.aiResult(ctx, b, q.From.ID, result, err)
 	return true
 }

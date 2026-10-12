@@ -35,9 +35,15 @@ The system SHALL provide starter and user-created categories and support several
 ### Requirement: Optional interest and filters
 The system SHALL support voluntary «Хочу сходить / Не интересно» and filters for all, own additions, partner additions, mutual interest, frozen and visited places. New additions SHALL not require partner votes or generate review-request notifications.
 
+When two users form a pair, their non-archived personal place collections SHALL be merged into the pair's one shared collection while preserving each original author. New places added by either active partner SHALL enter that same pair collection.
+
 #### Scenario: Unevaluated idea
 - **WHEN** only one partner has expressed interest
 - **THEN** the place remains available for AI with unknown partner interest labeled; it is neither a mutual match nor an automatic refusal.
+
+#### Scenario: Pair collection merge
+- **WHEN** two users with personal ideas create a pair
+- **THEN** both sets of ideas appear in one shared collection with their original authors and without duplicate ownership transfer.
 
 ### Requirement: Editing and archival
 Both partners SHALL be able to edit shared card fields, archive cards and restore them. Original authorship and visit history SHALL survive archival; personal opinions and reviews SHALL be editable only by their author.

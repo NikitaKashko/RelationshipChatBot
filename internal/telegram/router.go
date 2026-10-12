@@ -36,6 +36,25 @@ func (r *Router) send(ctx context.Context, b *bot.Bot, actor int64, text string,
 	text = string(chars)
 	_, _ = b.SendMessage(ctx, &bot.SendMessageParams{ChatID: actor, Text: text, ReplyMarkup: markup})
 }
+
+// sendAI renders the small Markdown subset DeepSeek commonly returns. Telegram
+// rejects an entire formatted message on malformed Markdown, so delivery falls
+// back to the original plain text instead of exposing a transport error.
+func (r *Router) sendAI(ctx context.Context, b *bot.Bot, actor int64, text string, markup any) {
+	formatted := strings.ReplaceAll(text, "**", "*")
+	chars := []rune(formatted)
+	for len(chars) > 2000 {
+		chunk := string(chars[:2000])
+		if _, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: actor, Text: chunk, ParseMode: models.ParseModeMarkdownV1}); err != nil {
+			_, _ = b.SendMessage(ctx, &bot.SendMessageParams{ChatID: actor, Text: chunk})
+		}
+		chars = chars[2000:]
+	}
+	chunk := string(chars)
+	if _, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: actor, Text: chunk, ParseMode: models.ParseModeMarkdownV1, ReplyMarkup: markup}); err != nil {
+		_, _ = b.SendMessage(ctx, &bot.SendMessageParams{ChatID: actor, Text: string(chars), ReplyMarkup: markup})
+	}
+}
 func publicError(err error) string {
 	if errors.Is(err, ErrAnswer) || errors.Is(err, ErrTimezone) {
 		return err.Error()

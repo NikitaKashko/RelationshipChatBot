@@ -63,7 +63,7 @@ type Selection struct {
 }
 
 const instruction = `Ты тёплый короткий помощник пары, на «ты». Основной интерфейс — обычная переписка.
-По умолчанию только локальная коллекция. Интернет через search_places только по явной просьбе найти новые места, в интернете или по присланной ссылке. Ссылка на место означает просьбу распознать его и предложить заполненную карточку, mode identify. Название/описание конкретного заведения для добавления — search_places mode identify; если разрешения на интернет нет, сервер предложит кнопку, не говори что уже искал. Оригинальные идеи вроде «пикник у озера» разрешены без поиска/адреса. Не ищи новые заведения при обычном подборе свидания без явной просьбы. /search — явное разрешение на интернет. Если город неизвестен, уточни его; временный город не меняет профиль. Найденные карточки появляются отдельно с кнопками; не вызывай prepare_action place_create для них, не копируй факты из памяти. Для неоднозначных описаний/филиалов предложи варианты и попроси уточнить. Источники не дают права на фото или тексты отзывов.
+По умолчанию только локальная коллекция. Интернет через search_places только по явной просьбе найти новые места, в интернете или по присланной ссылке. Одного согласия пользователя на ИИ достаточно для всех его поисков: не проси отдельного разрешения на каждый поиск. Ссылка на место означает просьбу распознать его и предложить заполненную карточку, mode identify. Название/описание конкретного заведения для добавления — search_places mode identify. Оригинальные идеи вроде «пикник у озера» разрешены без поиска/адреса. Не ищи новые заведения при обычном подборе свидания без явной просьбы. /search — явная просьба найти в интернете. Если город неизвестен, уточни его; временный город не меняет профиль. Найденные карточки появляются отдельно с кнопками; не вызывай prepare_action place_create для них, не копируй факты из памяти. Для неоднозначных описаний/филиалов предложи варианты и попроси уточнить. Источники не дают права на фото или тексты отзывов.
 Для выбора из существующей копилки перед каждым подбором ОБЯЗАТЕЛЬНО вызови read_collection с явными условиями запроса и уточнений из диалога. Никаких ограничений, если пользователь их не задал. Запрос «накидай идей» допускает новые общие идеи без чтения копилки; реальные заведения ищи только по явному разрешению на интернет. Старого списка кандидатов больше нет.
 Условия пользователя обязательны, кроме бюджетного расчёта: в текущем прототипе бюджет отложен, не запрашивай его и не обещай соответствие общей стоимости. При просьбе рассчитать бюджет коротко сообщи об этом ограничении. Неизвестные адрес, расстояние или часы не означают соответствие условиям. Учитывай предпочтения обоих из read_context.
 Совпадения интересов приоритетны; неоценённое партнёром — неизвестный интерес, не отказ. Frozen/refused/archived никогда не предлагай автоматически.
@@ -95,7 +95,7 @@ func function(name, description string, props map[string]any, required []string)
 func tools() []any {
 	array := map[string]any{"type": "array", "items": map[string]string{"type": "string"}}
 	return []any{
-		function("search_places", "Найти новые места (discover) или распознать конкретное место по ссылке/описанию (identify). Запрос берётся из текущего сообщения пользователя. Сеть разрешается сервером только по явной просьбе или кнопке; результат — карточки с кнопками, без сохранения.", map[string]any{"mode": map[string]any{"type": "string", "enum": []string{"discover", "identify"}}, "city": map[string]string{"type": "string"}}, []string{"mode"}),
+		function("search_places", "Найти новые места (discover) по явной просьбе об интернет-поиске или распознать конкретное место по ссылке/описанию (identify). Одно уже данное согласие на ИИ покрывает поиск; отдельное подтверждение не нужно. Результат — карточки с кнопками, без сохранения.", map[string]any{"mode": map[string]any{"type": "string", "enum": []string{"discover", "identify"}}, "city": map[string]string{"type": "string"}}, []string{"mode"}),
 		function("read_collection", "Свежая допустимая коллекция", map[string]any{"categories": array, "without": array, "city": map[string]string{"type": "string"}}, nil),
 		function("read_context", "Город/часовой пояс, разрешённые предпочтения, планы, посещения; без чужой переписки", map[string]any{}, nil),
 		function("read_place", "Текущая версия вручную указанного места, включая фриз и отказ", map[string]any{"id": map[string]string{"type": "integer"}}, []string{"id"}),
@@ -226,9 +226,10 @@ func (s *Service) Converse(ctx context.Context, actor int64, text string) (Resul
 	}
 	allowed := map[int64]bool{}
 	search := &searchTurn{text: text, conversation: id, pair: pair}
-	// Links and search buttons already define the lookup. Avoid a redundant
+	// Links and explicit internet-search wording already define the lookup. Avoid a redundant
 	// paid router-model call; native search interprets the human request.
-	if len(links.FindAllString(text, -1)) > 0 || strings.HasPrefix(text, "/search ") {
+	allowSearch, refuseSearch := searchPermission(text)
+	if allowSearch && !refuseSearch {
 		return s.directSearch(ctx, actor, search, result)
 	}
 	// Bounded tool rounds prevent runaway model loops. This is not a user quota;
@@ -308,6 +309,19 @@ func (s *Service) Converse(ctx context.Context, actor int64, text string) (Resul
 			}
 			raw, _ := json.Marshal(value)
 			messages = append(messages, Message{Role: "tool", CallID: call.ID, Content: string(raw)})
+		}
+		// Search results are already validated and rendered as separate cards.
+		// Returning them immediately avoids a second verbose model paraphrase.
+		if search.attempted && (len(result.SearchCards) > 0 || len(result.Places) > 0) {
+			result.Text = searchResultTitle(search.mode, len(result.SearchCards)+len(result.Places))
+			stored := result.Text
+			if err = s.Store.Write(ctx, func(q store.Query) error {
+				_, e := q.ExecContext(ctx, "INSERT INTO messages(conversation_id,role,text,created_at) VALUES(?,'assistant',?,?)", id, stored, s.Store.Now().Unix())
+				return e
+			}); err != nil {
+				return result, err
+			}
+			return result, nil
 		}
 	}
 	result.Text = "Подготовленные варианты доступны ниже. Для следующего шага уточни запрос."

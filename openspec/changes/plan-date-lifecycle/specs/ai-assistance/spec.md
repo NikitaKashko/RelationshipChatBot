@@ -26,11 +26,26 @@ Automatic suggestions SHALL default to the collection, prioritize mutual interes
 - **THEN** the bot offers next actions and does not silently unfreeze places or call internet search.
 
 ### Requirement: Explicit web search
-Internet search SHALL run only after an explicit request or search button. Results SHALL offer three to five grounded cards when enough results exist, explain relevance, show sources and unknown data, and provide save-to-collection and more-results actions without automatic saving.
+Enabling AI SHALL be the only provider consent required from that user. Internet search SHALL run immediately after an explicit search request, a place link or a concrete-place identification request, without a second consent button. Ordinary collection requests SHALL still remain local. The bot SHALL acknowledge search start immediately. Results SHALL offer up to five separate grounded cards, prefer an exact retrieved Yandex Maps URL and otherwise provide a clearly labelled Yandex Maps search link, explain relevance, and provide a save-to-collection action on every new card without automatic saving.
 
 #### Scenario: Fewer trustworthy results
 - **WHEN** search supports only two places
 - **THEN** the bot shows two with a limitation explanation instead of inventing additional establishments.
+
+#### Scenario: Search after AI consent
+- **WHEN** a consented user asks to find interesting places on the internet
+- **THEN** search starts immediately, the bot reports progress and no additional search-permission button is created.
+
+#### Scenario: Five grounded results
+- **WHEN** the provider returns more than five supported distinct places
+- **THEN** the bot renders exactly five independent previews, each with its own add-to-collection button.
+
+### Requirement: Telegram presentation
+AI prose SHALL use Telegram-supported Markdown rendering with a plain-text fallback when Telegram rejects markup. Search and identification results SHALL use compact card previews that omit unavailable optional fields instead of listing every unknown. A place link or concrete description SHALL produce such a preview and an add-to-collection button when the provider supports an identity.
+
+#### Scenario: Unknown optional fields
+- **WHEN** search confirms a place name and address but not price or hours
+- **THEN** the preview shows the confirmed fields and does not print empty price or hours rows.
 
 ### Requirement: Confirmed mutations
 AI SHALL prepare versioned drafts for collection, plan, review and persistent-preference changes. A user action SHALL commit changes; model output alone SHALL not authorize writes. Sensitive deletion SHALL require its separate explicit confirmation.
