@@ -47,6 +47,10 @@ func (r *Router) draft(ctx context.Context, b *bot.Bot, actor int64, kind string
 }
 
 func (r *Router) card(ctx context.Context, b *bot.Bot, actor, id int64) {
+	r.cardWithNotice(ctx, b, actor, id, "")
+}
+
+func (r *Router) cardWithNotice(ctx context.Context, b *bot.Bot, actor, id int64, notice string) {
 	cards := collection.Service{Store: r.Store}
 	c, err := cards.Get(ctx, r.Store.DB, actor, id)
 	if err != nil {
@@ -54,18 +58,26 @@ func (r *Router) card(ctx context.Context, b *bot.Bot, actor, id int64) {
 		return
 	}
 	key := strconv.FormatInt(id, 10)
-	archiveText := "В архив"
+	archiveText := "🗄 Убрать в архив"
 	if c.Archived {
-		archiveText = "Вернуть из архива"
+		archiveText = "♻️ Вернуть из архива"
 	}
-	rows := [][]models.InlineKeyboardButton{{{Text: "Хочу сходить", CallbackData: "want:" + key}, {Text: "Не интересно", CallbackData: "uninterested:" + key}}, {{Text: "Создать черновик", CallbackData: "candidate:" + key}, {Text: archiveText, CallbackData: "archive:" + key}}}
+	rows := [][]models.InlineKeyboardButton{
+		{{Text: "❤️ Хочу сходить", CallbackData: "want:" + key}, {Text: "🙅 Не интересно", CallbackData: "uninterested:" + key}},
+		{{Text: "📝 В черновик свидания", CallbackData: "candidate:" + key}},
+		{{Text: archiveText, CallbackData: "archive:" + key}},
+	}
 	if len(c.Photos) > 0 {
 		_, _ = b.SendPhoto(ctx, &bot.SendPhotoParams{ChatID: actor, Photo: &models.InputFileString{Data: c.Photos[0]}, Caption: c.Title})
 		if len(c.Photos) > 1 {
 			rows = append(rows, []models.InlineKeyboardButton{{Text: "Ещё фото", CallbackData: "photos:" + key}})
 		}
 	}
-	r.send(ctx, b, actor, fmt.Sprintf("#%d · %s", id, collection.Render(c)), models.InlineKeyboardMarkup{InlineKeyboard: rows})
+	text := fmt.Sprintf("#%d · %s", id, collection.Render(c))
+	if notice != "" {
+		text = notice + "\n\n" + text
+	}
+	r.send(ctx, b, actor, text, models.InlineKeyboardMarkup{InlineKeyboard: rows})
 }
 
 func (r *Router) collectionCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) bool {
@@ -125,10 +137,11 @@ func (r *Router) collectionCallback(ctx context.Context, b *bot.Bot, q *models.C
 
 func (r *Router) saved(ctx context.Context, b *bot.Bot, actor int64, result json.RawMessage) {
 	var out struct {
-		QuietSaved bool  `json:"quiet_saved"`
-		Place      int64 `json:"place"`
-		Plan       int64 `json:"plan"`
-		Visit      int64 `json:"visit"`
+		QuietSaved      bool  `json:"quiet_saved"`
+		CollectionAdded bool  `json:"collection_added"`
+		Place           int64 `json:"place"`
+		Plan            int64 `json:"plan"`
+		Visit           int64 `json:"visit"`
 	}
 	_ = json.Unmarshal(result, &out)
 	if out.QuietSaved {
@@ -140,6 +153,10 @@ func (r *Router) saved(ctx context.Context, b *bot.Bot, actor int64, result json
 		return
 	}
 	if out.Place != 0 {
+		if out.CollectionAdded {
+			r.cardWithNotice(ctx, b, actor, out.Place, "✅ Добавлено в коллекцию")
+			return
+		}
 		r.card(ctx, b, actor, out.Place)
 		return
 	}

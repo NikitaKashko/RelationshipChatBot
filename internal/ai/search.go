@@ -251,9 +251,6 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 		if place.Why != "" {
 			card.Description += "\nПочему подходит: " + limitText(place.Why, 250)
 		}
-		if len(place.Unknown) > 0 {
-			card.Description += "\nНе подтверждено: " + strings.Join(place.Unknown, ", ")
-		}
 		svc := actions.Service{Store: s.Store}
 		raw, _ := json.Marshal(collection.SearchSave{Card: card})
 		idea, err := svc.Prepare(ctx, actor, "ai:search_save", raw)

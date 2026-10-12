@@ -61,9 +61,27 @@ func TestOneAIConsentCoversSearchAndSaveStaysAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var receipt struct {
+		Place           int64 `json:"place"`
+		CollectionAdded bool  `json:"collection_added"`
+	}
+	if json.Unmarshal(first, &receipt) != nil || receipt.Place == 0 || !receipt.CollectionAdded {
+		t.Fatal("search save lacks explicit collection receipt", string(first))
+	}
 	again, err := d.act.Apply(d.ctx, 1, card.SaveToken)
 	if err != nil || string(first) != string(again) {
 		t.Fatal("callback replay")
+	}
+	if _, err = d.db.DB.ExecContext(d.ctx, "UPDATE drafts SET result=? WHERE id=?", fmt.Sprintf(`{"place":%d}`, receipt.Place), card.SaveToken); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := d.act.Apply(d.ctx, 1, card.SaveToken)
+	receipt = struct {
+		Place           int64 `json:"place"`
+		CollectionAdded bool  `json:"collection_added"`
+	}{}
+	if err != nil || json.Unmarshal(legacy, &receipt) != nil || !receipt.CollectionAdded {
+		t.Fatal("legacy search receipt was not enriched", err, string(legacy))
 	}
 	if d.count(t, "SELECT count(*) FROM places") != 1 || d.count(t, "SELECT count(*) FROM candidates") != 0 || d.count(t, "SELECT count(*) FROM plans") != 0 {
 		t.Fatal("non-atomic save/candidate or unsolicited plan")

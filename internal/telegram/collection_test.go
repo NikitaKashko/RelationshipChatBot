@@ -89,8 +89,8 @@ func TestTelegramCardCoverAndTwoPhotosOnDemand(t *testing.T) {
 	if len(photos) != 1 || photos[0] != "file_cover" {
 		t.Fatal("cover not sent alone", photos)
 	}
-	if len(texts) != 1 || !strings.Contains(texts[0], "Бюджет не проверен") {
-		t.Fatal("unknown budget omitted", texts)
+	if len(texts) != 1 || strings.Contains(texts[0], "Бюджет не проверен") || strings.Contains(texts[0], "Часы работы не проверены") {
+		t.Fatal("unknown fields shown", texts)
 	}
 	router.collectionCallback(ctx, b, &models.CallbackQuery{ID: "test", From: models.User{ID: 1}, Data: "photos:" + strconvID(out.Place)})
 	if len(photos) != 3 || photos[1] != "file_second" || photos[2] != "file_third" {
@@ -113,7 +113,7 @@ func TestTelegramCardCoverAndTwoPhotosOnDemand(t *testing.T) {
 	}
 	json.Unmarshal(result, &out)
 	router.card(ctx, b, 1, out.Place)
-	if len(photos) != 3 || len(texts) != 2 || !strings.Contains(texts[1], "Адрес не указан") {
+	if len(photos) != 3 || len(texts) != 2 || strings.Contains(texts[1], "Адрес не указан") {
 		t.Fatal("text-only card failed", photos, texts)
 	}
 }

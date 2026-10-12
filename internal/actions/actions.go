@@ -242,6 +242,15 @@ func (s *Service) Apply(ctx context.Context, actor int64, id string) (result jso
 				return store.ErrConflict
 			}
 			result = json.RawMessage(previous.String)
+			// Old search-save receipts predate the explicit collection feedback.
+			// Enrich them on replay without repeating the database mutation.
+			if kind == "search_save" {
+				var receipt map[string]any
+				if json.Unmarshal(result, &receipt) == nil {
+					receipt["collection_added"] = true
+					result, _ = json.Marshal(receipt)
+				}
+			}
 			return nil
 		}
 		if expiry <= float64(s.Store.Now().Unix()) || current != pair.Int64 {
@@ -284,7 +293,7 @@ func (s *Service) Apply(ctx context.Context, actor int64, id string) (result jso
 					return e
 				}
 			}
-			result, _ = json.Marshal(map[string]int64{"place": n})
+			result, _ = json.Marshal(map[string]any{"place": n, "collection_added": true})
 		case "preferences":
 			var p store.Preferences
 			_ = decode([]byte(raw), &p)

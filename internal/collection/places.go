@@ -470,14 +470,12 @@ func Render(c Card) string {
 	text := c.Title + "\nКатегории: " + strings.Join(c.Categories, ", ") + "\nДобавил: " + c.Author
 	if c.Address != "" {
 		text += "\nАдрес: " + c.Address
-	} else {
-		text += "\nАдрес не указан"
 	}
 	if c.MapURL != "" {
 		text += "\nКарта: " + c.MapURL
 	}
-	if c.Description != "" {
-		text += "\n" + c.Description
+	if description := visibleDescription(c.Description); description != "" {
+		text += "\n" + description
 	}
 	if c.Price != nil {
 		basis := "на человека"
@@ -485,10 +483,7 @@ func Render(c Card) string {
 			basis = "на двоих"
 		}
 		text += "\nЦена: " + strconv.FormatFloat(*c.Price, 'f', -1, 64) + " ₽ " + basis
-	} else {
-		text += "\nБюджет не проверен"
 	}
-	text += "\nЧасы работы не проверены"
 	for _, src := range c.Sources {
 		text += "\nИсточник: " + src.URL + " (" + time.Unix(src.RetrievedAt, 0).UTC().Format("2006-01-02") + ")"
 	}
@@ -505,4 +500,16 @@ func Render(c Card) string {
 		text += "\nВ архиве"
 	}
 	return text
+}
+
+func visibleDescription(description string) string {
+	lines := []string{}
+	for _, line := range strings.Split(description, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(strings.ToLower(line), "не подтверждено:") {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
 }

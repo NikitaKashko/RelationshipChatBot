@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -101,6 +102,7 @@ func TestTelegramBareLinkAndAddLinkShowReviewedCards(t *testing.T) {
 		t.Fatal("card auto-saved")
 	}
 	cardButtons := 0
+	firstSave := ""
 	for _, msg := range messages {
 		var markup models.InlineKeyboardMarkup
 		json.Unmarshal(msg["reply_markup"], &markup)
@@ -108,12 +110,39 @@ func TestTelegramBareLinkAndAddLinkShowReviewedCards(t *testing.T) {
 			for _, button := range row {
 				if button.Text == "➕ Добавить в коллекцию" && strings.HasPrefix(button.CallbackData, "save:") {
 					cardButtons++
+					if firstSave == "" {
+						firstSave = button.CallbackData
+					}
 				}
 			}
 		}
 	}
 	if cardButtons != 2 {
 		t.Fatal("review/save buttons missing", cardButtons)
+	}
+	r.Handle(ctx, b, &models.Update{CallbackQuery: &models.CallbackQuery{ID: "save-search", From: models.User{ID: 1, FirstName: "Owner"}, Data: firstSave, Message: models.MaybeInaccessibleMessage{Message: &models.Message{ID: 1, Chat: models.Chat{ID: 1, Type: models.ChatTypePrivate}}}}})
+	db.DB.QueryRowContext(ctx, "SELECT count(*) FROM places").Scan(&count)
+	if count != 1 {
+		t.Fatal("reviewed card was not saved")
+	}
+	saved := messages[len(messages)-1]
+	var savedText string
+	_ = json.Unmarshal(saved["text"], &savedText)
+	if !strings.Contains(savedText, "✅ Добавлено в коллекцию") || strings.Contains(savedText, "не проверен") || strings.Contains(savedText, "Не подтверждено:") {
+		t.Fatal("saved card is unclear or exposes unknown fields", savedText)
+	}
+	var savedMarkup models.InlineKeyboardMarkup
+	_ = json.Unmarshal(saved["reply_markup"], &savedMarkup)
+	labels := []string{}
+	for _, row := range savedMarkup.InlineKeyboard {
+		for _, item := range row {
+			labels = append(labels, item.Text)
+		}
+	}
+	for _, want := range []string{"❤️ Хочу сходить", "🙅 Не интересно", "📝 В черновик свидания", "🗄 Убрать в архив"} {
+		if !slices.Contains(labels, want) {
+			t.Fatalf("missing clear action %q in %v", want, labels)
+		}
 	}
 	r.Handle(ctx, b, &models.Update{Message: &models.Message{From: &models.User{ID: 1}, Chat: models.Chat{ID: 1, Type: models.ChatTypePrivate}, Text: "https://127.0.0.1/secret"}})
 	if search.calls != 2 {

@@ -48,6 +48,12 @@ When two users form a pair, their non-archived personal place collections SHALL 
 ### Requirement: Editing and archival
 Both partners SHALL be able to edit shared card fields, archive cards and restore them. Original authorship and visit history SHALL survive archival; personal opinions and reviews SHALL be editable only by their author.
 
+After a searched place is saved, the bot SHALL visibly confirm that it entered the collection and SHALL present self-explanatory actions for personal interest, adding the place to a date draft and archival. Collection cards SHALL omit unavailable optional fields and legacy unknown-field annotations rather than presenting them as populated rows.
+
+#### Scenario: Saved search card
+- **WHEN** a user presses add-to-collection on a reviewed search result
+- **THEN** the returned card starts with a successful collection confirmation, shows clearly named actions and omits unknown address, budget, hours and legacy «Не подтверждено» lines.
+
 #### Scenario: Archived planned place
 - **WHEN** a card referenced in an old plan is archived
 - **THEN** the old plan retains its reference and historical description while automatic recommendations exclude the archived card.

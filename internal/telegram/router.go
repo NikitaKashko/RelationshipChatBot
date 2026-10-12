@@ -170,6 +170,13 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		text := "Сохранено"
 		if err != nil {
 			text = publicError(err)
+		} else {
+			var receipt struct {
+				CollectionAdded bool `json:"collection_added"`
+			}
+			if json.Unmarshal(result, &receipt) == nil && receipt.CollectionAdded {
+				text = "Добавлено в коллекцию"
+			}
 		}
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID, Text: text, ShowAlert: err != nil})
 		if err == nil {
