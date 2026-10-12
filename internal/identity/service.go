@@ -187,6 +187,11 @@ func (s *Service) Claim(ctx context.Context, actor int64, name, token string) (k
 			return e
 		} else if status == "deleted" {
 			return store.ErrDenied
+		} else if (i.Kind == "owner" || i.Kind == "access") && status == "ready" && !i.Claimed.Valid {
+			// Access links enroll a new account. A ready user must not consume
+			// somebody else's one-person referral allowance. An unfinished account
+			// may use a replacement after its old link expires.
+			return store.ErrConflict
 		}
 		if i.Kind == "owner" {
 			var owners int

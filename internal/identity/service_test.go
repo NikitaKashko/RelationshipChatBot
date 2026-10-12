@@ -150,6 +150,9 @@ func TestMemberReferralIsSingleUseWhileOwnerRemainsUnlimited(t *testing.T) {
 	if err != nil {
 		t.Fatal("replacement referral not issued", err)
 	}
+	if _, err = f.ids.Claim(f.ctx, 1, "Owner", second); !errors.Is(err, store.ErrConflict) {
+		t.Fatal("existing account consumed a new-user referral", err)
+	}
 	if _, err = f.ids.Claim(f.ctx, 3, "Referred", second); err != nil {
 		t.Fatal("referral was not claimed", err)
 	}

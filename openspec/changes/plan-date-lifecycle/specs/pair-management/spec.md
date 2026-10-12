@@ -29,6 +29,10 @@ Every ready user SHALL have a visible action for a separate application access i
 - **WHEN** a new Telegram account claims a member's access link
 - **THEN** that member cannot issue another access link, while the newly registered user receives their own one-person allowance and both users keep separate partner invitations.
 
+#### Scenario: Existing user opens a referral
+- **WHEN** an already registered account opens another member's access link
+- **THEN** the link is rejected, remains available to a new account and does not consume the sender's allowance.
+
 #### Scenario: Owner creates multiple access links
 - **WHEN** the owner requests multiple access invitations
 - **THEN** each request can create a distinct valid link without consuming a one-person allowance.
