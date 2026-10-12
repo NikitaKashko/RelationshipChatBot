@@ -62,11 +62,7 @@ func (r *Router) cardWithNotice(ctx context.Context, b *bot.Bot, actor, id int64
 	if c.Archived {
 		archiveText = "♻️ Вернуть из архива"
 	}
-	rows := [][]models.InlineKeyboardButton{
-		{{Text: "❤️ Хочу сходить", CallbackData: "want:" + key}, {Text: "🙅 Не интересно", CallbackData: "uninterested:" + key}},
-		{{Text: "📝 В черновик свидания", CallbackData: "candidate:" + key}},
-		{{Text: archiveText, CallbackData: "archive:" + key}},
-	}
+	rows := placeCardRows(c, key, archiveText, notice != "")
 	if len(c.Photos) > 0 {
 		_, _ = b.SendPhoto(ctx, &bot.SendPhotoParams{ChatID: actor, Photo: &models.InputFileString{Data: c.Photos[0]}, Caption: c.Title})
 		if len(c.Photos) > 1 {
@@ -78,6 +74,32 @@ func (r *Router) cardWithNotice(ctx context.Context, b *bot.Bot, actor, id int64
 		text = notice + "\n\n" + text
 	}
 	r.send(ctx, b, actor, text, models.InlineKeyboardMarkup{InlineKeyboard: rows})
+}
+
+func placeCardRows(c collection.Card, key, archiveText string, justSaved bool) [][]models.InlineKeyboardButton {
+	rows := [][]models.InlineKeyboardButton{}
+	// A newly saved card already records the author as interested. The success
+	// preview therefore shows the state in text instead of offering a no-op
+	// interest button or an immediate archive action.
+	if !justSaved {
+		switch c.Mine {
+		case "want":
+			rows = append(rows, []models.InlineKeyboardButton{{Text: "🙅 Изменить: не моё", CallbackData: "uninterested:" + key}})
+		case "uninterested":
+			rows = append(rows, []models.InlineKeyboardButton{{Text: "❤️ Изменить: хочу", CallbackData: "want:" + key}})
+		default:
+			wantText := "❤️ Хочу сходить"
+			if c.Theirs == "want" {
+				wantText = "❤️ Тоже хочу"
+			}
+			rows = append(rows, []models.InlineKeyboardButton{{Text: wantText, CallbackData: "want:" + key}, {Text: "🙅 Не моё", CallbackData: "uninterested:" + key}})
+		}
+	}
+	rows = append(rows, []models.InlineKeyboardButton{{Text: "📝 В черновик свидания", CallbackData: "candidate:" + key}})
+	if !justSaved {
+		rows = append(rows, []models.InlineKeyboardButton{{Text: archiveText, CallbackData: "archive:" + key}})
+	}
+	return rows
 }
 
 func (r *Router) collectionCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) bool {

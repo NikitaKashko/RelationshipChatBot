@@ -85,8 +85,8 @@ func TestEnabledAssistantSurvivesRestartAndMenuDoesNotAskAgain(t *testing.T) {
 		t.Fatal("owner invitation button missing")
 	}
 	memberMenu, _ := json.Marshal(mainKeyboard(false))
-	if strings.Contains(string(memberMenu), "🎟 Пригласить пользователя") {
-		t.Fatal("owner button shown to member")
+	if !strings.Contains(string(memberMenu), "🎟 Пригласить пользователя") {
+		t.Fatal("referral button hidden from member")
 	}
 	send("🎟 Пригласить пользователя")
 	var invites int
@@ -100,8 +100,8 @@ func TestEnabledAssistantSurvivesRestartAndMenuDoesNotAskAgain(t *testing.T) {
 	}
 	router.Handle(ctx, b, &models.Update{Message: &models.Message{From: &models.User{ID: 2}, Chat: models.Chat{ID: 2, Type: models.ChatTypePrivate}, Text: "/accessinvite"}})
 	db.DB.QueryRowContext(ctx, "SELECT count(*) FROM invitations WHERE kind='access'").Scan(&invites)
-	if invites != 1 {
-		t.Fatal("member issued access invitation")
+	if invites != 2 {
+		t.Fatal("member referral invitation not created")
 	}
 	send("/quiet_custom")
 	send("22:30–08:30")

@@ -2,16 +2,17 @@ package identity_test
 
 import (
 	"errors"
+	"testing"
+
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
-	"testing"
 )
 
-func TestAccessOwnerOnlyAndPartnerReissue(t *testing.T) {
+func TestMemberAccessAndPartnerReissueAreIndependent(t *testing.T) {
 	f := setup(t)
 	f.member(t, 2)
-	if _, e := f.ids.Issue(f.ctx, 2, "access"); !errors.Is(e, store.ErrDenied) {
-		t.Fatal("member issued access", e)
+	if _, e := f.ids.Issue(f.ctx, 2, "access"); e != nil {
+		t.Fatal("member could not issue referral access", e)
 	}
 	old, e := f.ids.Issue(f.ctx, 2, "partner")
 	if e != nil {

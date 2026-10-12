@@ -119,3 +119,43 @@ func TestTelegramCardCoverAndTwoPhotosOnDemand(t *testing.T) {
 }
 
 func strconvID(v int64) string { return fmt.Sprint(v) }
+
+func TestPlaceCardActionsExplainInterestState(t *testing.T) {
+	labels := func(rows [][]models.InlineKeyboardButton) []string {
+		var result []string
+		for _, row := range rows {
+			for _, item := range row {
+				result = append(result, item.Text)
+			}
+		}
+		return result
+	}
+	contains := func(items []string, want string) bool {
+		for _, item := range items {
+			if item == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	justSaved := labels(placeCardRows(collection.Card{Mine: "want"}, "7", "🗄 Убрать в архив", true))
+	if len(justSaved) != 1 || justSaved[0] != "📝 В черновик свидания" {
+		t.Fatal("new card has redundant actions", justSaved)
+	}
+
+	author := labels(placeCardRows(collection.Card{Mine: "want"}, "7", "🗄 Убрать в архив", false))
+	if !contains(author, "🙅 Изменить: не моё") || contains(author, "❤️ Хочу сходить") || !contains(author, "🗄 Убрать в архив") {
+		t.Fatal("author actions do not reflect saved interest", author)
+	}
+
+	partner := labels(placeCardRows(collection.Card{Theirs: "want"}, "7", "🗄 Убрать в архив", false))
+	if !contains(partner, "❤️ Тоже хочу") || !contains(partner, "🙅 Не моё") {
+		t.Fatal("partner actions do not explain shared interest", partner)
+	}
+
+	changed := labels(placeCardRows(collection.Card{Mine: "uninterested", Theirs: "want"}, "7", "🗄 Убрать в архив", false))
+	if !contains(changed, "❤️ Изменить: хочу") || contains(changed, "🙅 Не моё") {
+		t.Fatal("changed rating cannot be switched", changed)
+	}
+}

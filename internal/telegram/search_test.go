@@ -139,10 +139,18 @@ func TestTelegramBareLinkAndAddLinkShowReviewedCards(t *testing.T) {
 			labels = append(labels, item.Text)
 		}
 	}
-	for _, want := range []string{"❤️ Хочу сходить", "🙅 Не интересно", "📝 В черновик свидания", "🗄 Убрать в архив"} {
+	for _, want := range []string{"📝 В черновик свидания"} {
 		if !slices.Contains(labels, want) {
 			t.Fatalf("missing clear action %q in %v", want, labels)
 		}
+	}
+	for _, unwanted := range []string{"❤️ Хочу сходить", "🙅 Не интересно", "🗄 Убрать в архив"} {
+		if slices.Contains(labels, unwanted) {
+			t.Fatalf("newly saved card exposes redundant action %q in %v", unwanted, labels)
+		}
+	}
+	if !strings.Contains(savedText, "Твоя оценка: хочешь сходить ✅") {
+		t.Fatal("saved card does not explain automatic interest", savedText)
 	}
 	r.Handle(ctx, b, &models.Update{Message: &models.Message{From: &models.User{ID: 1}, Chat: models.Chat{ID: 1, Type: models.ChatTypePrivate}, Text: "https://127.0.0.1/secret"}})
 	if search.calls != 2 {

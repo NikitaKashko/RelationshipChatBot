@@ -35,11 +35,19 @@ The system SHALL provide starter and user-created categories and support several
 ### Requirement: Optional interest and filters
 The system SHALL support voluntary «Хочу сходить / Не интересно» and filters for all, own additions, partner additions, mutual interest, frozen and visited places. New additions SHALL not require partner votes or generate review-request notifications.
 
-When two users form a pair, their non-archived personal place collections SHALL be merged into the pair's one shared collection while preserving each original author. New places added by either active partner SHALL enter that same pair collection.
-
 #### Scenario: Unevaluated idea
 - **WHEN** only one partner has expressed interest
 - **THEN** the place remains available for AI with unknown partner interest labeled; it is neither a mutual match nor an automatic refusal.
+
+### Requirement: Interest state actions
+The author of a newly saved card SHALL start with «Хочу сходить». Its confirmation SHALL show that state and omit redundant interest and immediate archive actions. A normally opened card SHALL offer only actions that change the viewer's current state; an unrated partner SHALL see «Тоже хочу» when the author wants to visit.
+
+#### Scenario: Author saves a new place
+- **WHEN** a user confirms adding a new place to the collection
+- **THEN** the returned card says that they want to visit, offers adding it to a date draft, and does not offer the same interest action or immediate archival.
+
+### Requirement: Pair collection merge
+When two users form a pair, their non-archived personal place collections SHALL be merged into one shared collection while preserving each original author. New places added by either active partner SHALL enter that collection.
 
 #### Scenario: Pair collection merge
 - **WHEN** two users with personal ideas create a pair
@@ -48,12 +56,13 @@ When two users form a pair, their non-archived personal place collections SHALL 
 ### Requirement: Editing and archival
 Both partners SHALL be able to edit shared card fields, archive cards and restore them. Original authorship and visit history SHALL survive archival; personal opinions and reviews SHALL be editable only by their author.
 
-After a searched place is saved, the bot SHALL visibly confirm that it entered the collection and SHALL present self-explanatory actions for personal interest, adding the place to a date draft and archival. Collection cards SHALL omit unavailable optional fields and legacy unknown-field annotations rather than presenting them as populated rows.
+#### Scenario: Archived planned place
+- **WHEN** a card referenced in an old plan is archived
+- **THEN** the old plan retains its reference and historical description while automatic recommendations exclude the archived card.
+
+### Requirement: Saved search presentation
+After a searched place is saved, the bot SHALL visibly confirm collection entry and present the actions allowed for its current state. Collection cards SHALL omit unavailable optional fields and legacy unknown-field annotations.
 
 #### Scenario: Saved search card
 - **WHEN** a user presses add-to-collection on a reviewed search result
 - **THEN** the returned card starts with a successful collection confirmation, shows clearly named actions and omits unknown address, budget, hours and legacy «Не подтверждено» lines.
-
-#### Scenario: Archived planned place
-- **WHEN** a card referenced in an old plan is archived
-- **THEN** the old plan retains its reference and historical description while automatic recommendations exclude the archived card.

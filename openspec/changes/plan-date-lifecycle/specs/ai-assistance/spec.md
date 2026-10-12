@@ -26,15 +26,18 @@ Automatic suggestions SHALL default to the collection, prioritize mutual interes
 - **THEN** the bot offers next actions and does not silently unfreeze places or call internet search.
 
 ### Requirement: Explicit web search
-Enabling AI SHALL be the only provider consent required from that user. Internet search SHALL run immediately after an explicit search request, a place link or a concrete-place identification request, without a second consent button. Ordinary collection requests SHALL still remain local. The bot SHALL acknowledge search start immediately. Results SHALL offer up to five separate grounded cards, prefer an exact retrieved Yandex Maps URL and otherwise provide a clearly labelled Yandex Maps search link, explain relevance, and provide a save-to-collection action on every new card without automatic saving.
-
-#### Scenario: Fewer trustworthy results
-- **WHEN** search supports only two places
-- **THEN** the bot shows two with a limitation explanation instead of inventing additional establishments.
+Enabling AI SHALL be the only provider consent required from that user. Internet search SHALL run immediately after an explicit search request, a place link or a concrete-place identification request, without a second consent button. Ordinary collection requests SHALL remain local. The bot SHALL acknowledge search start immediately.
 
 #### Scenario: Search after AI consent
 - **WHEN** a consented user asks to find interesting places on the internet
 - **THEN** search starts immediately, the bot reports progress and no additional search-permission button is created.
+
+### Requirement: Grounded search cards
+Search results SHALL offer up to five separate grounded cards, prefer an exact retrieved Yandex Maps URL and otherwise provide a clearly labelled Yandex Maps search link. Each new card SHALL explain relevance and offer a save-to-collection action without automatic saving.
+
+#### Scenario: Fewer trustworthy results
+- **WHEN** search supports only two places
+- **THEN** the bot shows two with a limitation explanation instead of inventing additional establishments.
 
 #### Scenario: Five grounded results
 - **WHEN** the provider returns more than five supported distinct places

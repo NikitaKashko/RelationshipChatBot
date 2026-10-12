@@ -493,7 +493,18 @@ func Render(c Card) string {
 	if c.FreezeUntil > 0 {
 		text += "\nФриз до " + time.Unix(int64(c.FreezeUntil), 0).UTC().Format("2006-01-02")
 	}
-	if c.Theirs == "" {
+	switch c.Mine {
+	case "want":
+		text += "\nТвоя оценка: хочешь сходить ✅"
+	case "uninterested":
+		text += "\nТвоя оценка: не моё"
+	}
+	switch c.Theirs {
+	case "want":
+		text += "\nПартнёр тоже хочет сходить ❤️"
+	case "uninterested":
+		text += "\nПартнёру не интересно"
+	default:
 		text += "\nПартнёр пока не оценил"
 	}
 	if c.Archived {

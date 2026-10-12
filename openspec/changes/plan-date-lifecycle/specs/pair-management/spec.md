@@ -7,7 +7,7 @@ The prototype ships link registration and pairing. Separation, export and accoun
 ## ADDED Requirements
 
 ### Requirement: Invitation enrollment
-The system SHALL distinguish owner-issued access invitations from partner invitations. Links SHALL be single-use, expire after seven days, support revocation and replacement, and bind to the first Telegram account starting enrollment.
+The system SHALL distinguish application access invitations from partner invitations. Links SHALL be single-use, expire after seven days, support revocation and replacement before claim, and bind to the first Telegram account starting enrollment.
 
 #### Scenario: Interrupted registration
 - **WHEN** a user starts registration and returns later before completing it
@@ -17,13 +17,21 @@ The system SHALL distinguish owner-issued access invitations from partner invita
 - **WHEN** a new user follows a valid partner invitation
 - **THEN** they can register and explicitly confirm pairing with its sender; an already paired sender makes the invitation invalid.
 
-### Requirement: Owner access invitation button
+### Requirement: One referral per member
 
-The owner SHALL also have a visible bot button to create an access invitation for a new user, distinct from a partner invitation. The server SHALL reject this operation for non-owner users even if they send its command directly.
+Every ready user SHALL have a visible action for a separate application access invitation regardless of pair status or how that user joined. A non-owner MAY successfully refer one new account. They SHALL have at most one unclaimed active access link, MAY revoke and replace it before claim, and SHALL consume the allowance when the link binds to a new Telegram account. Partner invitations SHALL not affect this allowance. The owner SHALL issue access invitations without this limit.
 
-#### Scenario: A member requests an owner invitation
-- **WHEN** a non-owner sends the owner invitation command
-- **THEN** no access invitation is created.
+#### Scenario: Member replaces an unused link
+- **WHEN** a member revokes an unclaimed access link and requests another within their allowance
+- **THEN** the old link is rejected and one replacement link is issued.
+
+#### Scenario: Member referral is claimed
+- **WHEN** a new Telegram account claims a member's access link
+- **THEN** that member cannot issue another access link, while the newly registered user receives their own one-person allowance and both users keep separate partner invitations.
+
+#### Scenario: Owner creates multiple access links
+- **WHEN** the owner requests multiple access invitations
+- **THEN** each request can create a distinct valid link without consuming a one-person allowance.
 
 ### Requirement: Profile and pairing
 The system SHALL collect personal city and confirmed personal timezone during onboarding. The name SHALL come from the authenticated Telegram profile; legacy profile drafts SHALL NOT override it. Pair creation SHALL require recipient confirmation and use invitation links exclusively; friendship codes SHALL NOT be displayed or accepted. A user SHALL belong to at most one active pair.

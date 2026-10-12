@@ -129,6 +129,48 @@ func TestInvitationRaceResumeExpiryAndRevoke(t *testing.T) {
 	}
 }
 
+func TestMemberReferralIsSingleUseWhileOwnerRemainsUnlimited(t *testing.T) {
+	f := setup(t)
+	f.member(t, 2)
+
+	first, err := f.ids.Issue(f.ctx, 2, "access")
+	if err != nil {
+		t.Fatal("member could not issue referral", err)
+	}
+	if _, err = f.ids.Issue(f.ctx, 2, "access"); !errors.Is(err, identity.ErrAccessInviteActive) {
+		t.Fatal("second active referral was allowed", err)
+	}
+	if err = f.ids.CancelAccess(f.ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.ids.Claim(f.ctx, 3, "Ignored", first); !errors.Is(err, store.ErrConflict) {
+		t.Fatal("cancelled referral was accepted", err)
+	}
+	second, err := f.ids.Issue(f.ctx, 2, "access")
+	if err != nil {
+		t.Fatal("replacement referral not issued", err)
+	}
+	if _, err = f.ids.Claim(f.ctx, 3, "Referred", second); err != nil {
+		t.Fatal("referral was not claimed", err)
+	}
+	if _, err = f.ids.Issue(f.ctx, 2, "access"); !errors.Is(err, identity.ErrReferralUsed) {
+		t.Fatal("member issued a second successful referral", err)
+	}
+	f.enroll(t, 3, second)
+	if _, err = f.ids.Issue(f.ctx, 3, "access"); err != nil {
+		t.Fatal("referred user did not receive their own referral", err)
+	}
+	if _, err = f.ids.Issue(f.ctx, 2, "partner"); err != nil {
+		t.Fatal("access referral incorrectly consumed partner invitation", err)
+	}
+	if _, err = f.ids.Issue(f.ctx, 1, "access"); err != nil {
+		t.Fatal("owner access invitation unexpectedly limited", err)
+	}
+	if _, err = f.ids.Issue(f.ctx, 1, "access"); err != nil {
+		t.Fatal("owner could not issue multiple access invitations", err)
+	}
+}
+
 func TestPairRaceAndDraftReceipt(t *testing.T) {
 	f := setup(t)
 	f.member(t, 2)

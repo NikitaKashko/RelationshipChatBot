@@ -272,19 +272,37 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 	}
 	if text == "/settings" {
 		markup := navButtons("🌙 Тихие часы", "quiet", "🤖 Помощник", "ai", "🌍 Город пары", "location", "💛 Имя партнёра в уведомлениях", "names", "📝 Черновики свиданий", "candidates", "🚫 Отменить приглашения партнёра", "cancelinvite", "🏠 Главное меню", "start")
-		if u.Role == "owner" {
-			markup.InlineKeyboard = append([][]models.InlineKeyboardButton{{{Text: "🎟 Пригласить нового пользователя", CallbackData: "menu:accessinvite"}}}, markup.InlineKeyboard...)
-		}
+		markup.InlineKeyboard = append([][]models.InlineKeyboardButton{{{Text: "🎟 Пригласить пользователя", CallbackData: "menu:accessinvite"}}, {{Text: "🚫 Отменить ссылку доступа", CallbackData: "menu:cancelaccessinvite"}}}, markup.InlineKeyboard...)
 		r.send(ctx, b, actor, "Настройки 💛", markup)
 		return
 	}
 	if text == "/accessinvite" {
 		token, err := ids.Issue(ctx, actor, "access")
 		if err != nil {
+			if errors.Is(err, identity.ErrReferralUsed) {
+				r.send(ctx, b, actor, "Ты уже пригласил одного пользователя — личная реферальная ссылка использована. Приглашение партнёра остаётся доступно отдельно.", nil)
+				return
+			}
+			if errors.Is(err, identity.ErrAccessInviteActive) {
+				r.send(ctx, b, actor, "У тебя уже есть действующая ссылка доступа. Её можно отправить человеку или отменить в настройках и выпустить новую.", nil)
+				return
+			}
 			r.send(ctx, b, actor, publicError(err), nil)
 			return
 		}
-		r.send(ctx, b, actor, "Приглашение нового пользователя 💛\nhttps://t.me/"+r.Username+"?start="+token+"\nОдноразовая ссылка, действует 7 дней. Она даёт доступ к боту, а пару пользователь создаёт отдельно со своим партнёром.", nil)
+		limit := "После регистрации этого человека твоя одна реферальная возможность будет использована."
+		if u.Role == "owner" {
+			limit = "Для владельца количество таких приглашений не ограничено."
+		}
+		r.send(ctx, b, actor, "Приглашение нового пользователя 💛\nhttps://t.me/"+r.Username+"?start="+token+"\nОдноразовая ссылка, действует 7 дней. Она даёт доступ к боту, а пару пользователь создаёт отдельно. "+limit, nil)
+		return
+	}
+	if text == "/cancelaccessinvite" {
+		if err := ids.CancelAccess(ctx, actor); err != nil {
+			r.send(ctx, b, actor, publicError(err), nil)
+		} else {
+			r.send(ctx, b, actor, "Непринятая ссылка доступа отменена. Можно выпустить новую через «🎟 Пригласить пользователя».", nil)
+		}
 		return
 	}
 	if r.quietMessage(ctx, b, actor, text) {

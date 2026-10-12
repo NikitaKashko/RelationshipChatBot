@@ -27,6 +27,9 @@ type Invitation struct {
 	Revoked, Consumed sql.NullFloat64
 }
 
+var ErrReferralUsed = errors.New("реферальное приглашение уже использовано")
+var ErrAccessInviteActive = errors.New("ссылка доступа уже выпущена")
+
 func RandomToken() (string, error) {
 	b := make([]byte, 24)
 	if _, err := rand.Read(b); err != nil {
@@ -74,7 +77,19 @@ func (s *Service) Issue(ctx context.Context, actor int64, kind string) (token st
 		switch kind {
 		case "access":
 			if u.Role != "owner" {
-				return store.ErrDenied
+				var used, active int
+				if e = q.QueryRowContext(ctx, "SELECT count(*) FROM invitations WHERE sender_id=? AND kind='access' AND claimed_by IS NOT NULL", actor).Scan(&used); e != nil {
+					return e
+				}
+				if used > 0 {
+					return ErrReferralUsed
+				}
+				if e = q.QueryRowContext(ctx, "SELECT count(*) FROM invitations WHERE sender_id=? AND kind='access' AND claimed_by IS NULL AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?", actor, s.Store.Now().Unix()).Scan(&active); e != nil {
+					return e
+				}
+				if active > 0 {
+					return ErrAccessInviteActive
+				}
 			}
 		case "partner":
 			p, e := store.PairFor(ctx, q, actor)
@@ -91,6 +106,18 @@ func (s *Service) Issue(ctx context.Context, actor int64, kind string) (token st
 		return e
 	})
 	return
+}
+
+// CancelAccess revokes only unclaimed access links. A claimed referral remains
+// the member's one used invitation even if the new user has not finished setup.
+func (s *Service) CancelAccess(ctx context.Context, actor int64) error {
+	return s.Store.Write(ctx, func(q store.Query) error {
+		if _, err := store.UserFor(ctx, q, actor, false); err != nil {
+			return err
+		}
+		_, err := q.ExecContext(ctx, "UPDATE invitations SET revoked_at=? WHERE sender_id=? AND kind='access' AND claimed_by IS NULL AND consumed_at IS NULL AND revoked_at IS NULL", s.Store.Now().Unix(), actor)
+		return err
+	})
 }
 
 func (s *Service) valid(ctx context.Context, q store.Query, actor int64, hash string) (Invitation, error) {
