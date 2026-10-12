@@ -26,7 +26,7 @@ The owner SHALL also have a visible bot button to create an access invitation fo
 - **THEN** no access invitation is created.
 
 ### Requirement: Profile and pairing
-The system SHALL collect personal city, notification name and confirmed personal timezone during onboarding. Pair creation SHALL require recipient confirmation and use invitation links exclusively; friendship codes SHALL NOT be displayed or accepted. A user SHALL belong to at most one active pair.
+The system SHALL collect personal city and confirmed personal timezone during onboarding. The name SHALL come from the authenticated Telegram profile; legacy profile drafts SHALL NOT override it. Pair creation SHALL require recipient confirmation and use invitation links exclusively; friendship codes SHALL NOT be displayed or accepted. A user SHALL belong to at most one active pair.
 
 #### Scenario: Partner finishes registration
 - **WHEN** the recipient of a partner invitation confirms their completed profile

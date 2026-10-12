@@ -24,7 +24,6 @@ var phrases = map[string][]string{
 
 type Service struct{ Store *store.Store }
 type Names struct {
-	Name    string `json:"name"`
 	Partner string `json:"partner"`
 }
 
@@ -32,12 +31,11 @@ func (s *Service) Names(ctx context.Context, q store.Query, actor int64, p Names
 	if _, err := store.UserFor(ctx, q, actor, false); err != nil {
 		return err
 	}
-	p.Name = strings.TrimSpace(p.Name)
 	p.Partner = strings.TrimSpace(p.Partner)
-	if p.Name == "" || len([]rune(p.Name)) > 60 || len([]rune(p.Partner)) > 60 || strings.ContainsAny(p.Name+p.Partner, "\r\n") {
+	if len([]rune(p.Partner)) > 60 || strings.ContainsAny(p.Partner, "\r\n") {
 		return errors.New("имя должно быть коротким и в одну строку")
 	}
-	_, err := q.ExecContext(ctx, "UPDATE users SET notification_name=?,partner_nickname=? WHERE id=?", p.Name, p.Partner, actor)
+	_, err := q.ExecContext(ctx, "UPDATE users SET partner_nickname=? WHERE id=?", p.Partner, actor)
 	return err
 }
 
@@ -71,7 +69,7 @@ func (s *Service) Click(ctx context.Context, actor int64, kind string) error {
 		if err = q.QueryRowContext(ctx, "SELECT u.id,coalesce(u.partner_nickname,'') FROM pair_members m JOIN users u ON u.id=m.user_id WHERE m.pair_id=? AND m.active=1 AND m.user_id<>? AND u.status='ready'", pair, actor).Scan(&recipient, &nickname); err != nil {
 			return err
 		}
-		name := u.NotificationName
+		name := u.Name
 		if strings.TrimSpace(nickname) != "" {
 			name = nickname
 		}

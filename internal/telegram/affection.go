@@ -19,7 +19,7 @@ func (r *Router) affectionCallback(ctx context.Context, b *bot.Bot, q *models.Ca
 	}
 	svc := affection.Service{Store: r.Store}
 	err := svc.Click(ctx, q.From.ID, strings.TrimPrefix(q.Data, "affection:"))
-	text := "Знак внимания принят 💛 Доставлю с учётом тихих часов."
+	text := "Знак внимания принят 💛 Доставлю сразу, даже в тихие часы."
 	if errors.Is(err, affection.ErrCooldown) {
 		text = affection.ErrCooldown.Error()
 	} else if err != nil {
@@ -33,15 +33,30 @@ func (r *Router) affectionMessage(ctx context.Context, b *bot.Bot, actor int64, 
 		r.send(ctx, b, actor, "Какой знак внимания отправим? 💛", affectionKeyboard())
 		return true
 	}
+	if command == "/names_reset" {
+		r.draft(ctx, b, actor, "notification_names", affection.Names{}, "Вернуть имя партнёра из Telegram в твоих уведомлениях?")
+		return true
+	}
 	if command != "/names" {
 		return false
 	}
-	parts := strings.Split(args, "|")
-	if len(parts) != 2 {
-		r.send(ctx, b, actor, "/names моё имя | моё обращение к партнёру\nПустое обращение справа убирает замену имени.", nil)
+	if args == "" {
+		var nickname string
+		if err := r.Store.DB.QueryRowContext(ctx, "SELECT coalesce(partner_nickname,'') FROM users WHERE id=?", actor).Scan(&nickname); err != nil {
+			r.send(ctx, b, actor, publicError(err), nil)
+			return true
+		}
+		if nickname == "" {
+			nickname = "Имя из Telegram"
+		}
+		r.send(ctx, b, actor, "Как подписывать партнёра в уведомлениях, которые получаешь ты?\nСейчас: "+nickname+"\nОтправитель это имя не задаёт.", navButtons("✏️ Задать имя партнёра", "names_edit", "↩️ Имя из Telegram", "names_reset"))
 		return true
 	}
-	p := affection.Names{Name: strings.TrimSpace(parts[0]), Partner: strings.TrimSpace(parts[1])}
-	r.draft(ctx, b, actor, "notification_names", p, "Сохранить имена для уведомлений?\nТвоё имя: "+p.Name+"\nОбращение к партнёру: "+p.Partner)
+	if strings.Contains(args, "|") {
+		r.send(ctx, b, actor, "Теперь задаётся только имя партнёра для тебя. Открой настройки имени.", navButtons("Имя партнёра", "names"))
+		return true
+	}
+	p := affection.Names{Partner: strings.TrimSpace(args)}
+	r.draft(ctx, b, actor, "notification_names", p, "В твоих уведомлениях партнёр будет подписан: "+p.Partner+". Сохранить?")
 	return true
 }

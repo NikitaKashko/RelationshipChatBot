@@ -15,8 +15,8 @@ import (
 func TestAffectionNicknameCooldownAndNoPhraseRepeat(t *testing.T) {
 	d := fixture(t)
 	s := affection.Service{Store: d.db}
-	d.apply(t, 1, "notification_names", affection.Names{Name: "Никита"})
-	d.apply(t, 2, "notification_names", affection.Names{Name: "Имя", Partner: "зайка"})
+	d.db.DB.ExecContext(d.ctx, "UPDATE users SET name='Никита',notification_name='НЕ ИСПОЛЬЗОВАТЬ' WHERE id=1")
+	d.apply(t, 2, "notification_names", affection.Names{Partner: "зайка"})
 	previous := ""
 	for i := 0; i < 15; i++ {
 		if err := s.Click(d.ctx, 1, "thinking"); err != nil {
@@ -43,7 +43,7 @@ func TestAffectionNicknameCooldownAndNoPhraseRepeat(t *testing.T) {
 	if d.count(t, "SELECT count(*) FROM notifications WHERE expires_at-created_at=43200") != 15 {
 		t.Fatal("attention expiry not twelve hours")
 	}
-	d.apply(t, 2, "notification_names", affection.Names{Name: "Имя"})
+	d.apply(t, 2, "notification_names", affection.Names{})
 	if err := s.Click(d.ctx, 1, "attention"); err != nil {
 		t.Fatal(err)
 	}

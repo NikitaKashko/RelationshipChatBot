@@ -1,0 +1,35 @@
+[Unit]
+Description=Relationship bot isolated owner-only simulator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=relationshiptest
+Group=relationshiptest
+WorkingDirectory=/var/lib/relationshipbot-test
+EnvironmentFile=/etc/relationshipbot-test/test.env
+Environment=GOMEMLIMIT=64MiB
+ExecStart=/opt/relationshipbot/relationshipbot serve-test
+Restart=on-failure
+RestartSec=10
+UMask=0077
+MemoryMax=192M
+TasksMax=48
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/relationshipbot-test
+InaccessiblePaths=/var/lib/relationshipbot /etc/relationshipbot
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

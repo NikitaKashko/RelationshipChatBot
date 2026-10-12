@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/NikitaKashko/RelationshipChatBot/internal/dashboard"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/notifications"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/sandbox"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/telegram"
 	"github.com/go-telegram/bot"
@@ -37,6 +39,50 @@ func run() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	switch command {
+	case "serve-test":
+		return sandbox.Run(cfg)
+	case "check-test":
+		if cfg.TestBotToken == "" || cfg.TestBotToken == cfg.BotToken {
+			return fmt.Errorf("separate TEST_BOT_TOKEN required")
+		}
+		b, e := bot.New(cfg.TestBotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {}))
+		if e != nil {
+			return fmt.Errorf("invalid test configuration")
+		}
+		me, e := b.GetMe(ctx)
+		if e != nil {
+			return fmt.Errorf("test Telegram credential check failed")
+		}
+		if strings.EqualFold(me.Username, cfg.BotUsername) {
+			return fmt.Errorf("test bot matches production bot")
+		}
+		if cfg.BotToken != "" {
+			prod, e := bot.New(cfg.BotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {}))
+			if e != nil {
+				return fmt.Errorf("invalid production configuration")
+			}
+			p, e := prod.GetMe(ctx)
+			if e != nil {
+				return fmt.Errorf("production identity check failed")
+			}
+			if p.ID == me.ID {
+				return fmt.Errorf("test bot matches production bot")
+			}
+		}
+		fmt.Printf("TEST_BOT_OK @%s\n", me.Username)
+		return nil
+	case "owner-id":
+		db, err := store.Open(ctx, cfg.DatabasePath)
+		if err != nil {
+			return fmt.Errorf("database initialization failed")
+		}
+		defer db.DB.Close()
+		var id int64
+		if err = db.DB.QueryRowContext(ctx, "SELECT id FROM users WHERE role='owner' AND status='ready'").Scan(&id); err != nil {
+			return fmt.Errorf("registered owner missing")
+		}
+		fmt.Println(id)
+		return nil
 	case "set-avatar":
 		if len(os.Args) != 3 {
 			return fmt.Errorf("set-avatar requires image path")

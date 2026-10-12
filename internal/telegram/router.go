@@ -56,7 +56,7 @@ func (r *Router) wizard(ctx context.Context, b *bot.Bot, actor int64, w Wizard) 
 	case "city":
 		text = "Привет 💛 В каком городе ты живёшь?"
 	case "name":
-		text = "Как подписывать твои знаки внимания? Например, Никита или зайка. /skip — оставить имя из Telegram."
+		text = "Подпись берётся из твоего Telegram. Получатель может заменить её у себя в настройках. Нажми /skip, чтобы продолжить."
 	case "timezone":
 		text = "В каком часовом поясе ты живёшь? Для Москвы и Санкт-Петербурга нажми кнопку ниже. Можно написать «Москва» или свой часовой пояс, например Asia/Yekaterinburg."
 		markup = button("Московское время · UTC+3", "timezone:moscow")
@@ -124,6 +124,9 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		if q.Message.Message == nil || q.Message.Message.Chat.Type != models.ChatTypePrivate || q.Message.Message.Chat.ID != q.From.ID {
 			return
 		}
+		if err := r.syncTelegramName(ctx, q.From); err != nil {
+			return
+		}
 		if q.Data == "timezone:moscow" {
 			w, err := (&Enrollment{Store: r.Store}).Input(ctx, q.From.ID, "Europe/Moscow")
 			_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID, ShowAlert: err != nil, Text: func() string {
@@ -168,6 +171,10 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		return
 	}
 	actor := m.From.ID
+	if err := r.syncTelegramName(ctx, *m.From); err != nil {
+		r.send(ctx, b, actor, publicError(err), nil)
+		return
+	}
 	text := strings.TrimSpace(m.Text)
 	if command, ok := menuCommands[text]; ok {
 		text = command
@@ -180,7 +187,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 	parts := strings.Fields(text)
 	if len(parts) > 0 && strings.Split(parts[0], "@")[0] == "/start" {
 		if len(parts) > 1 {
-			if _, err := ids.Claim(ctx, actor, m.From.FirstName, parts[1]); err != nil {
+			if _, err := ids.Claim(ctx, actor, telegramName(*m.From), parts[1]); err != nil {
 				r.send(ctx, b, actor, publicError(err), nil)
 				return
 			}
@@ -238,7 +245,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		return
 	}
 	if text == "/settings" {
-		markup := navButtons("🌙 Тихие часы", "quiet", "🤖 Помощник", "ai", "🌍 Город пары", "location", "💛 Имена для уведомлений", "names", "📝 Черновики свиданий", "candidates", "🚫 Отменить приглашения партнёра", "cancelinvite", "🏠 Главное меню", "start")
+		markup := navButtons("🌙 Тихие часы", "quiet", "🤖 Помощник", "ai", "🌍 Город пары", "location", "💛 Имя партнёра в уведомлениях", "names", "📝 Черновики свиданий", "candidates", "🚫 Отменить приглашения партнёра", "cancelinvite", "🏠 Главное меню", "start")
 		if u.Role == "owner" {
 			markup.InlineKeyboard = append([][]models.InlineKeyboardButton{{{Text: "🎟 Пригласить нового пользователя", CallbackData: "menu:accessinvite"}}}, markup.InlineKeyboard...)
 		}

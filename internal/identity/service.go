@@ -257,9 +257,9 @@ func (s *Service) FinishProfile(ctx context.Context, q store.Query, actor int64,
 			}
 		}
 	}
-	if strings.TrimSpace(p.Name) == "" {
-		p.Name = u.NotificationName
-	}
+	// The authenticated Telegram display name is authoritative; profile drafts
+	// cannot choose an outgoing signature, including drafts from older versions.
+	p.Name = u.Name
 	if _, err = q.ExecContext(ctx, "UPDATE users SET city=?,timezone=?,notification_name=?,status='ready' WHERE id=?", strings.TrimSpace(p.City), p.Timezone, strings.TrimSpace(p.Name), actor); err != nil {
 		return err
 	}

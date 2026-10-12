@@ -59,12 +59,19 @@ func (e *Enrollment) Begin(ctx context.Context, actor int64) (Wizard, error) {
 		var payload string
 		err = q.QueryRowContext(ctx, "SELECT payload FROM drafts WHERE user_id=? AND kind='onboarding' AND applied_at IS NULL AND expires_at>? ORDER BY created_at DESC LIMIT 1", actor, e.Store.Now().Unix()).Scan(&payload)
 		if err == nil {
-			return json.Unmarshal([]byte(payload), &w)
+			if err = json.Unmarshal([]byte(payload), &w); err != nil {
+				return err
+			}
+			w.Profile.Name = u.Name
+			if w.Stage == "name" {
+				w.Stage = "timezone"
+			}
+			return e.save(ctx, q, actor, w)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		w = Wizard{Stage: "city", Profile: identity.Profile{Name: u.NotificationName}}
+		w = Wizard{Stage: "city", Profile: identity.Profile{Name: u.Name}}
 		return e.save(ctx, q, actor, w)
 	})
 	return w, err
@@ -110,10 +117,10 @@ func (e *Enrollment) Input(ctx context.Context, actor int64, text string) (Wizar
 		switch w.Stage {
 		case "city":
 			w.Profile.City = text
-			w.Stage = "name"
+			w.Stage = "timezone"
 		case "name":
 			if text != "/skip" {
-				w.Profile.Name = text
+				// Sender cannot select an attention signature.
 			}
 			w.Stage = "timezone"
 		case "timezone":

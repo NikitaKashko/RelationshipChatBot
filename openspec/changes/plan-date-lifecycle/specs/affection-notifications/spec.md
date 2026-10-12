@@ -12,15 +12,22 @@ The system SHALL provide «Хочу внимания», «Думаю о тебе
 - **THEN** the bot explains that pairing is needed and sends no affection message.
 
 ### Requirement: Names and variations
-The system SHALL let senders choose their notification name and recipients override their partner's name. The recipient override SHALL take priority. Each button SHALL have five to seven prepared phrases selected randomly without repeating its immediately previous phrase.
+The system SHALL use the sender's authenticated Telegram profile display name by default. Only the recipient SHALL choose or reset a partner nickname for messages they receive; the sender SHALL NOT configure an outgoing signature. Existing sender aliases SHALL NOT affect affection. Each button SHALL have five to seven prepared phrases selected randomly without repeating its immediately previous phrase.
 
 #### Scenario: Recipient nickname
-- **WHEN** the sender uses «Никита» and the recipient assigned «зайка»
+- **WHEN** the sender's Telegram profile name is «Никита» and the recipient assigned «зайка»
 - **THEN** the recipient's message uses «зайка» and the bot generates no paid AI call.
 
 ### Requirement: Frequency and delivery
-The system SHALL accept at most one affection per sender per minute across all three buttons. Accepted messages SHALL obey recipient quiet hours and expire after twelve hours without delivery.
+The system SHALL accept at most one affection per sender per minute across all three buttons. Accepted messages SHALL bypass recipient quiet hours and expire after twelve hours without delivery.
 
 #### Scenario: Quiet hours
 - **WHEN** an accepted affection occurs during recipient quiet hours
-- **THEN** it waits until those hours end and is discarded if it would be older than twelve hours.
+- **THEN** delivery is immediately eligible, independently from quiet hours.
+
+### Requirement: Isolated two-role simulator
+The system SHALL offer a separate test bot and database restricted to one authenticated owner account, mapping two virtual roles through the regular domain services. Production routing SHALL NOT accept virtual identities. Test messages SHALL identify their recipient role, inline callbacks SHALL retain their originating role, and outbound recipients SHALL be restricted to the test owner.
+
+#### Scenario: Old role button
+- **WHEN** the owner switches to role B and clicks a button originally sent to role A
+- **THEN** the action runs as role A, not role B; foreign accounts and unmarked callbacks are rejected.

@@ -15,6 +15,8 @@ type Config struct {
 	BotToken, DeepSeekKey, DeepSeekModel, DatabasePath string
 	USDRUB, BudgetTargetRUB                            float64
 	PanelPassword, BackupDir, BotUsername              string
+	TestBotToken, TestDatabasePath                     string
+	TestOwnerID                                        int64
 }
 
 func Load(path string) (Config, error) {
@@ -61,5 +63,9 @@ func Load(path string) (Config, error) {
 	if err != nil || target < 0 || math.IsNaN(target) || math.IsInf(target, 0) {
 		return Config{}, errors.New("invalid billing target")
 	}
-	return Config{BotToken: get("BOT_TOKEN", ""), DeepSeekKey: get("DEEPSEEK_API_KEY", ""), DeepSeekModel: get("DEEPSEEK_MODEL", "deepseek-flash"), DatabasePath: get("DATABASE_PATH", "data/release.sqlite"), USDRUB: fx, BudgetTargetRUB: target, PanelPassword: get("PANEL_PASSWORD", ""), BackupDir: get("BACKUP_DIR", "data/backups"), BotUsername: get("BOT_USERNAME", "relation_support_bot")}, nil
+	owner, err := strconv.ParseInt(get("TEST_OWNER_ID", "0"), 10, 64)
+	if err != nil || owner < 0 {
+		return Config{}, errors.New("invalid test owner ID")
+	}
+	return Config{BotToken: get("BOT_TOKEN", ""), DeepSeekKey: get("DEEPSEEK_API_KEY", ""), DeepSeekModel: get("DEEPSEEK_MODEL", "deepseek-flash"), DatabasePath: get("DATABASE_PATH", "data/release.sqlite"), USDRUB: fx, BudgetTargetRUB: target, PanelPassword: get("PANEL_PASSWORD", ""), BackupDir: get("BACKUP_DIR", "data/backups"), BotUsername: get("BOT_USERNAME", "relation_support_bot"), TestBotToken: get("TEST_BOT_TOKEN", ""), TestDatabasePath: get("TEST_DATABASE_PATH", "data/sandbox.sqlite"), TestOwnerID: owner}, nil
 }

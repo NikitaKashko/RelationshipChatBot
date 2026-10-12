@@ -42,11 +42,8 @@ func TestEnrollmentSurvivesRestartAndRequiresConfirmation(t *testing.T) {
 	defer db.DB.Close()
 	e.Store = db
 	w, err = e.Begin(ctx, 1)
-	if err != nil || w.Stage != "name" || w.Profile.City != "Москва" {
+	if err != nil || w.Stage != "timezone" || w.Profile.City != "Москва" {
 		t.Fatal("wizard lost", w, err)
-	}
-	if _, err = e.Input(ctx, 1, "зайка"); err != nil {
-		t.Fatal(err)
 	}
 	if _, err = e.Input(ctx, 1, "Wrong/Zone"); err == nil {
 		t.Fatal("invalid timezone accepted")
@@ -67,7 +64,7 @@ func TestEnrollmentSurvivesRestartAndRequiresConfirmation(t *testing.T) {
 		t.Fatal(err)
 	}
 	u, err := store.UserFor(ctx, db.DB, 1, false)
-	if err != nil || u.City != "Москва" || u.NotificationName != "зайка" {
+	if err != nil || u.City != "Москва" || u.Name != "Никита" || u.NotificationName != "Никита" {
 		t.Fatal(u, err)
 	}
 	if _, err = svc.Apply(ctx, 1, draft); err != nil {

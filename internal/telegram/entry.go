@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/affection"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/collection"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
@@ -98,6 +99,8 @@ func (r *Router) saveEntry(ctx context.Context, b *bot.Bot, actor int64, e entry
 	}
 	prompt := ""
 	switch e.Kind {
+	case "nickname":
+		prompt = "Как называть партнёра в твоих уведомлениях? Например, зайка. Это имя видишь только ты; до 60 символов."
 	case "lookup":
 		prompt = "Пришли ссылку на место или описание. Для поиска новых заведений напиши «найди новые места в интернете…»."
 	case "card":
@@ -160,6 +163,9 @@ func (r *Router) entryCallback(ctx context.Context, b *bot.Bot, q *models.Callba
 }
 func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text string) bool {
 	switch text {
+	case "/names_edit":
+		r.startEntry(ctx, b, actor, entry{Kind: "nickname"})
+		return true
 	case "/entry_cancel":
 		r.Store.DB.ExecContext(ctx, "DELETE FROM drafts WHERE user_id=? AND kind='ui_entry'", actor)
 		r.home(ctx, b, actor)
@@ -207,6 +213,14 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 	}
 	done := false
 	switch e.Kind {
+	case "nickname":
+		if value == "" || len([]rune(value)) > 60 || strings.ContainsAny(value, "\r\n") {
+			r.send(ctx, b, actor, "Нужно короткое имя в одну строку, до 60 символов.", nil)
+			return true
+		}
+		r.draft(ctx, b, actor, "notification_names", affection.Names{Partner: value}, "В твоих уведомлениях партнёр будет подписан: "+value+". Сохранить?")
+		r.Store.DB.ExecContext(ctx, "DELETE FROM drafts WHERE user_id=? AND kind='ui_entry'", actor)
+		return true
 	case "lookup":
 		r.Store.DB.ExecContext(ctx, "DELETE FROM drafts WHERE user_id=? AND kind='ui_entry'", actor)
 		r.aiMessage(ctx, b, actor, "Хочу добавить место: "+text)
