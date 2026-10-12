@@ -13,6 +13,7 @@ import (
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 type Service struct{ Store *store.Store }
@@ -43,7 +44,7 @@ func date(p Visit, zone string, now time.Time) (any, error) {
 	layouts := map[string]string{"day": "2006-01-02", "month": "2006-01", "year": "2006"}
 	layout, ok := layouts[p.Precision]
 	if !ok {
-		return nil, errors.New("укажи точность даты: day, month или year")
+		return nil, errors.New(texts.T("internal.feedback.feedback.001"))
 	}
 	loc, err := time.LoadLocation(zone)
 	if err != nil {
@@ -51,17 +52,16 @@ func date(p Visit, zone string, now time.Time) (any, error) {
 	}
 	t, err := time.ParseInLocation(layout, p.Date, loc)
 	if err != nil || t.Format(layout) != p.Date || t.After(now) {
-		return nil, errors.New("нужна действительная дата прошлого посещения")
+		return nil, errors.New(texts.T("internal.feedback.feedback.002"))
 	}
 	if p.Precision != "day" {
 		if p.Freeze {
-			return nil, errors.New("для автоматического фриза нужна точная дата; примерную дату можно сохранить без него")
+			return nil, errors.New(texts.T("internal.feedback.feedback.003"))
 		}
 		return nil, nil
 	}
 	return t.Unix(), nil
 }
-
 func (s *Service) notify(ctx context.Context, q store.Query, actor, pair int64, kind string, fields any) error {
 	if pair == 0 {
 		return nil
@@ -79,7 +79,6 @@ func (s *Service) notify(ctx context.Context, q store.Query, actor, pair int64, 
 	_, err = q.ExecContext(ctx, `INSERT INTO notifications(semantic_key,pair_id,recipient_id,kind,payload,available_at,expires_at,created_at) SELECT ?,?,user_id,?,?,?,?,? FROM pair_members WHERE pair_id=? AND active=1 AND user_id<>?`, fmt.Sprintf("feedback:%d", next), pair, kind, string(raw), s.Store.Now().Unix(), s.Store.Now().Add(48*time.Hour).Unix(), s.Store.Now().Unix(), pair, actor)
 	return err
 }
-
 func (s *Service) Record(ctx context.Context, q store.Query, actor int64, p Visit) (int64, error) {
 	u, err := store.UserFor(ctx, q, actor, false)
 	if err != nil {
@@ -104,7 +103,7 @@ func (s *Service) Record(ctx context.Context, q store.Query, actor int64, p Visi
 		return 0, err
 	}
 	if len(p.Places) == 0 {
-		return 0, errors.New("выбери посещённые места")
+		return 0, errors.New(texts.T("internal.feedback.feedback.004"))
 	}
 	if p.Plan != 0 {
 		plans := planning.Service{Store: s.Store}
@@ -116,7 +115,7 @@ func (s *Service) Record(ctx context.Context, q store.Query, actor int64, p Visi
 			return 0, store.ErrConflict
 		}
 		if p.Precision != "day" || plan.Start.After(s.Store.Now()) {
-			return 0, errors.New("запланированный поход ещё не состоялся или дата неточная")
+			return 0, errors.New(texts.T("internal.feedback.feedback.005"))
 		}
 		allowed := map[int64]bool{}
 		for _, c := range plan.Items {
@@ -134,7 +133,7 @@ func (s *Service) Record(ctx context.Context, q store.Query, actor int64, p Visi
 	created := float64(s.Store.Now().UnixNano()) / 1e9
 	for _, id := range p.Places {
 		if seen[id] {
-			return 0, errors.New("место повторяется")
+			return 0, errors.New(texts.T("internal.feedback.feedback.006"))
 		}
 		seen[id] = true
 		if err = store.PlaceFor(ctx, q, actor, id); err != nil {
@@ -191,7 +190,6 @@ func (s *Service) Record(ctx context.Context, q store.Query, actor int64, p Visi
 	// No retrospective prompt for manual or spontaneous history.
 	return id, nil
 }
-
 func (s *Service) VisitFor(ctx context.Context, q store.Query, actor, id int64, valid bool) (int64, error) {
 	if _, err := store.UserFor(ctx, q, actor, false); err != nil {
 		return 0, err
@@ -254,13 +252,13 @@ func (s *Service) Review(ctx context.Context, q store.Query, actor int64, p Revi
 		return err
 	}
 	if p.Rating != "liked" && p.Rating != "neutral" && p.Rating != "disliked" {
-		return errors.New("выбери оценку")
+		return errors.New(texts.T("internal.feedback.feedback.007"))
 	}
 	if p.Again != "again" && p.Again != "not_soon" && p.Again != "never" {
-		return errors.New("выбери желание вернуться")
+		return errors.New(texts.T("internal.feedback.feedback.008"))
 	}
 	if len([]rune(p.Comment)) > 2000 {
-		return errors.New("комментарий слишком длинный")
+		return errors.New(texts.T("internal.feedback.feedback.009"))
 	}
 	var count int
 	if err := q.QueryRowContext(ctx, "SELECT count(*) FROM visit_items WHERE visit_id=? AND place_id=?", p.Visit, p.Place).Scan(&count); err != nil {
@@ -285,7 +283,7 @@ func (s *Service) Freeze(ctx context.Context, q store.Query, actor int64, p Free
 	if p.Until != "" {
 		t, err := time.Parse(time.RFC3339, p.Until)
 		if err != nil || !t.After(s.Store.Now()) {
-			return errors.New("укажи будущую дату фриза с UTC-смещением")
+			return errors.New(texts.T("internal.feedback.feedback.010"))
 		}
 		until = t.Unix()
 	}

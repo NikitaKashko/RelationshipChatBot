@@ -3,10 +3,12 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/NikitaKashko/RelationshipChatBot/internal/actions"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 	"github.com/go-telegram/bot"
-	"strings"
 )
 
 func (r *Router) showQuiet(ctx context.Context, b *bot.Bot, actor int64) {
@@ -17,9 +19,9 @@ func (r *Router) showQuiet(ctx context.Context, b *bot.Bot, actor int64) {
 	}
 	status := start + "–" + end
 	if start == end {
-		status = "выключены"
+		status = texts.T("internal.telegram.quiet.001")
 	}
-	r.send(ctx, b, actor, fmt.Sprintf("🌙 Тихие часы: %s\nТвой часовой пояс: %s\nВ это время уведомления ждут, кроме знаков внимания и создания пары — они приходят сразу. На твои сообщения бот отвечает сразу.", status, zone), navButtons("23:00–09:00", "quiet_default", "00:00–10:00", "quiet_late", "✏️ Указать своё время", "quiet_custom", "🔔 Выключить тихие часы", "quiet_off", "🏠 Главное меню", "start"))
+	r.send(ctx, b, actor, fmt.Sprintf(texts.T("internal.telegram.quiet.002"), status, zone), navButtons("23:00–09:00", "quiet_default", "00:00–10:00", "quiet_late", texts.T("internal.telegram.quiet.003"), "quiet_custom", texts.T("internal.telegram.quiet.004"), "quiet_off", texts.T("internal.telegram.ai.017"), "start"))
 }
 func (r *Router) quietMessage(ctx context.Context, b *bot.Bot, actor int64, text string) bool {
 	if text == "/quiet" {
@@ -43,7 +45,7 @@ func (r *Router) quietMessage(ctx context.Context, b *bot.Bot, actor int64, text
 		if err != nil {
 			r.send(ctx, b, actor, publicError(err), nil)
 		} else {
-			r.send(ctx, b, actor, "Пришли начало и конец: например 22:30–08:30. Время — по твоему часовому поясу. Одинаковое начало и конец отключают тихие часы.", navButtons("Отмена", "quiet_cancel"))
+			r.send(ctx, b, actor, texts.T("internal.telegram.quiet.005"), navButtons(texts.T("internal.telegram.entry.024"), "quiet_cancel"))
 		}
 		return true
 	}
@@ -62,12 +64,12 @@ func (r *Router) quietMessage(ctx context.Context, b *bot.Bot, actor int64, text
 	}
 	parts := strings.Split(strings.NewReplacer("–", "-", "—", "-").Replace(value), "-")
 	if len(parts) != 2 {
-		r.send(ctx, b, actor, "Укажи время, например 22:30–08:30.", navButtons("Отмена", "quiet_cancel"))
+		r.send(ctx, b, actor, texts.T("internal.telegram.quiet.006"), navButtons(texts.T("internal.telegram.entry.024"), "quiet_cancel"))
 		return true
 	}
 	p := actions.QuietHours{Start: strings.TrimSpace(parts[0]), End: strings.TrimSpace(parts[1])}
 	if err := p.Validate(); err != nil {
-		r.send(ctx, b, actor, "Не получилось прочитать время. Пример: 22:30–08:30.", navButtons("Отмена", "quiet_cancel"))
+		r.send(ctx, b, actor, texts.T("internal.telegram.quiet.007"), navButtons(texts.T("internal.telegram.entry.024"), "quiet_cancel"))
 		return true
 	}
 	if custom || strings.HasPrefix(text, "/quiet ") {
@@ -76,9 +78,9 @@ func (r *Router) quietMessage(ctx context.Context, b *bot.Bot, actor int64, text
 			return true
 		}
 	}
-	preview := fmt.Sprintf("Тихие часы будут %s–%s по твоему часовому поясу.", p.Start, p.End)
+	preview := fmt.Sprintf(texts.T("internal.telegram.quiet.008"), p.Start, p.End)
 	if p.Start == p.End {
-		preview = "Выключить тихие часы? Уведомления смогут приходить в любое время."
+		preview = texts.T("internal.telegram.quiet.009")
 	}
 	r.draft(ctx, b, actor, "quiet_hours", p, preview)
 	return true

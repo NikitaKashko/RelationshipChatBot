@@ -11,6 +11,7 @@ import (
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 type Location struct {
@@ -23,7 +24,7 @@ type LocationConfirmation struct {
 
 func (s *Service) ProposeLocation(ctx context.Context, q store.Query, actor int64, p Location) (int64, error) {
 	if strings.TrimSpace(p.City) == "" || p.Timezone == "" || p.Timezone == "Local" {
-		return 0, errors.New("укажи город и часовой пояс")
+		return 0, errors.New(texts.T("internal.identity.location.001"))
 	}
 	if _, err := time.LoadLocation(p.Timezone); err != nil {
 		return 0, err

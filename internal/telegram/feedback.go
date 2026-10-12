@@ -8,6 +8,7 @@ import (
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/feedback"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -23,7 +24,7 @@ func (r *Router) showVisit(ctx context.Context, b *bot.Bot, actor, id int64) {
 		r.send(ctx, b, actor, publicError(err), nil)
 		return
 	}
-	text := fmt.Sprintf("Посещение #%d сохранено. Каждый может оставить свои впечатления:\n", id)
+	text := fmt.Sprintf(texts.T("internal.telegram.feedback.001"), id)
 	type item struct {
 		id    int64
 		title string
@@ -35,7 +36,7 @@ func (r *Router) showVisit(ctx context.Context, b *bot.Bot, actor, id int64) {
 		if err = rows.Scan(&place, &title); err != nil {
 			break
 		}
-		text += fmt.Sprintf("\n#%d · %s\n/review %d | %d | liked | again | комментарий\n", place, title, id, place)
+		text += fmt.Sprintf(texts.T("internal.telegram.feedback.002"), place, title, id, place)
 		items = append(items, item{place, title})
 	}
 	if err == nil {
@@ -46,14 +47,13 @@ func (r *Router) showVisit(ctx context.Context, b *bot.Bot, actor, id int64) {
 		r.send(ctx, b, actor, publicError(err), nil)
 		return
 	}
-	text += "\nОценка: liked / neutral / disliked. Вернуться: again / not_soon / never. «Хочу ещё» само не снимает фриз — его можно изменить отдельно."
+	text += texts.T("internal.telegram.feedback.003")
 	r.send(ctx, b, actor, text, nil)
 	for _, p := range items {
 		prefix := fmt.Sprintf("rate:%d:%d:", id, p.id)
-		r.send(ctx, b, actor, "Как тебе «"+p.title+"»?", models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: "Понравилось", CallbackData: prefix + "liked"}, {Text: "Нейтрально", CallbackData: prefix + "neutral"}, {Text: "Не понравилось", CallbackData: prefix + "disliked"}}}})
+		r.send(ctx, b, actor, texts.T("internal.telegram.feedback.004")+p.title+"»?", models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: texts.T("internal.telegram.feedback.005"), CallbackData: prefix + "liked"}, {Text: texts.T("internal.telegram.feedback.006"), CallbackData: prefix + "neutral"}, {Text: texts.T("internal.telegram.feedback.007"), CallbackData: prefix + "disliked"}}}})
 	}
 }
-
 func (r *Router) feedbackCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) bool {
 	parts := strings.Split(q.Data, ":")
 	if len(parts) < 1 || (parts[0] != "rate" && parts[0] != "again") {
@@ -72,7 +72,7 @@ func (r *Router) feedbackCallback(ctx context.Context, b *bot.Bot, q *models.Cal
 	}
 	var count int
 	if err := r.Store.DB.QueryRowContext(ctx, "SELECT count(*) FROM visit_items WHERE visit_id=? AND place_id=?", visit, place).Scan(&count); err != nil || count != 1 {
-		r.send(ctx, b, q.From.ID, "Место недоступно в этом посещении.", nil)
+		r.send(ctx, b, q.From.ID, texts.T("internal.telegram.feedback.008"), nil)
 		return true
 	}
 	rating := parts[3]
@@ -81,7 +81,7 @@ func (r *Router) feedbackCallback(ctx context.Context, b *bot.Bot, q *models.Cal
 	}
 	if parts[0] == "rate" {
 		prefix := fmt.Sprintf("again:%d:%d:%s:", visit, place, rating)
-		r.send(ctx, b, q.From.ID, "Хочешь вернуться?", models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: "Хочу ещё", CallbackData: prefix + "again"}, {Text: "Не скоро", CallbackData: prefix + "not_soon"}, {Text: "Больше не хочу", CallbackData: prefix + "never"}}}})
+		r.send(ctx, b, q.From.ID, texts.T("internal.telegram.feedback.009"), models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: texts.T("internal.telegram.feedback.010"), CallbackData: prefix + "again"}, {Text: texts.T("internal.telegram.feedback.011"), CallbackData: prefix + "not_soon"}, {Text: texts.T("internal.telegram.feedback.012"), CallbackData: prefix + "never"}}}})
 		return true
 	}
 	p := feedback.Review{Visit: visit, Place: place, Rating: rating, Again: parts[4]}
@@ -93,14 +93,13 @@ func (r *Router) feedbackCallback(ctx context.Context, b *bot.Bot, q *models.Cal
 	if p.Again != "again" && p.Again != "not_soon" && p.Again != "never" {
 		return true
 	}
-	preview := "Сохранить твои впечатления?\n" + map[string]string{"liked": "Понравилось", "neutral": "Нейтрально", "disliked": "Не понравилось"}[p.Rating] + " · " + map[string]string{"again": "Хочу ещё", "not_soon": "Не скоро", "never": "Больше не хочу"}[p.Again]
+	preview := texts.T("internal.telegram.feedback.013") + map[string]string{"liked": texts.T("internal.telegram.feedback.005"), "neutral": texts.T("internal.telegram.feedback.006"), "disliked": texts.T("internal.telegram.feedback.007")}[p.Rating] + " · " + map[string]string{"again": texts.T("internal.telegram.feedback.010"), "not_soon": texts.T("internal.telegram.feedback.011"), "never": texts.T("internal.telegram.feedback.012")}[p.Again]
 	if p.Again == "again" {
-		preview += "\nФриз сам не изменится. Можно сократить его отдельно через /freeze."
+		preview += texts.T("internal.telegram.feedback.014")
 	}
 	r.draft(ctx, b, q.From.ID, "review", p, preview)
 	return true
 }
-
 func (r *Router) feedbackMessage(ctx context.Context, b *bot.Bot, actor int64, cmd, args string) bool {
 	parts := strings.Split(args, "|")
 	for i := range parts {
@@ -113,27 +112,30 @@ func (r *Router) feedbackMessage(ctx context.Context, b *bot.Bot, actor int64, c
 		n, _ := strconv.ParseInt(parts[i], 10, 64)
 		return n
 	}
-	help := func(text string) bool { r.send(ctx, b, actor, text, nil); return true }
+	help := func(text string) bool {
+		r.send(ctx, b, actor, text, nil)
+		return true
+	}
 	switch cmd {
 	case "/visit":
 		if len(parts) != 4 && len(parts) != 5 {
-			return help("/visit дата | day/month/year | ID мест через запятую | freeze/nofreeze | необязательный ID плана\nДля плана — точная дата; фриз включается автоматически.")
+			return help(texts.T("internal.telegram.feedback.015"))
 		}
 		if parts[3] != "freeze" && parts[3] != "nofreeze" {
-			return help("Выбери freeze или nofreeze.")
+			return help(texts.T("internal.telegram.feedback.016"))
 		}
 		p := feedback.Visit{Date: parts[0], Precision: parts[1], Freeze: parts[3] == "freeze"}
 		for _, raw := range strings.Split(parts[2], ",") {
 			id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
 			if err != nil || id < 1 {
-				return help("Укажи ID посещённых мест через запятую.")
+				return help(texts.T("internal.telegram.feedback.017"))
 			}
 			p.Places = append(p.Places, id)
 		}
 		if len(parts) == 5 {
 			p.Plan = number(4)
 			if p.Plan < 1 {
-				return help("Неверный ID плана.")
+				return help(texts.T("internal.telegram.feedback.018"))
 			}
 			plans := planning.Service{Store: r.Store}
 			plan, err := plans.Get(ctx, r.Store.DB, actor, p.Plan)
@@ -143,37 +145,37 @@ func (r *Router) feedbackMessage(ctx context.Context, b *bot.Bot, actor int64, c
 			p.Version = plan.Version
 			p.Freeze = true
 		}
-		preview := fmt.Sprintf("Записать посещение: %s (%s), места %v?\nФриз: %t. Непосещённые места не меняются.", p.Date, p.Precision, p.Places, p.Freeze)
+		preview := fmt.Sprintf(texts.T("internal.telegram.feedback.019"), p.Date, p.Precision, p.Places, p.Freeze)
 		r.draft(ctx, b, actor, "visit_record", p, preview)
 	case "/visitinfo":
 		r.showVisit(ctx, b, actor, number(0))
 	case "/correctvisit":
-		r.draft(ctx, b, actor, "visit_correct", feedback.Correction{ID: number(0)}, "Отменить ошибочную отметку посещения? Отзывы останутся в истории; автоматический фриз пересчитается, ручной сохранится.")
+		r.draft(ctx, b, actor, "visit_correct", feedback.Correction{ID: number(0)}, texts.T("internal.telegram.feedback.020"))
 	case "/notwent":
 		plans := planning.Service{Store: r.Store}
 		p, err := plans.Get(ctx, r.Store.DB, actor, number(0))
 		if err != nil {
 			return help(publicError(err))
 		}
-		r.draft(ctx, b, actor, "plan_not_went", planning.Cancel{ID: p.ID, Version: p.Version}, "Отметить «Не пошли» для «"+p.Title+"»? Идеи останутся доступными без нового фриза.")
+		r.draft(ctx, b, actor, "plan_not_went", planning.Cancel{ID: p.ID, Version: p.Version}, texts.T("internal.telegram.feedback.021")+p.Title+texts.T("internal.telegram.feedback.022"))
 	case "/review":
 		if len(parts) < 4 || len(parts) > 5 {
-			return help("/review ID посещения | ID места | liked/neutral/disliked | again/not_soon/never | необязательный комментарий")
+			return help(texts.T("internal.telegram.feedback.023"))
 		}
 		p := feedback.Review{Visit: number(0), Place: number(1), Rating: parts[2], Again: parts[3]}
 		if len(parts) == 5 {
 			p.Comment = parts[4]
 		}
-		r.draft(ctx, b, actor, "review", p, fmt.Sprintf("Сохранить только твой отзыв?\nОценка: %s\nВернуться: %s\n%s", p.Rating, p.Again, p.Comment))
+		r.draft(ctx, b, actor, "review", p, fmt.Sprintf(texts.T("internal.telegram.feedback.024"), p.Rating, p.Again, p.Comment))
 	case "/freeze":
 		if len(parts) != 2 {
-			return help("/freeze ID места | будущая дата RFC3339 (например 2026-12-01T12:00:00+03:00) или off")
+			return help(texts.T("internal.telegram.feedback.025"))
 		}
 		p := feedback.Freeze{Place: number(0), Until: parts[1]}
 		if p.Until == "off" {
 			p.Until = ""
 		}
-		r.draft(ctx, b, actor, "freeze", p, "Изменить общий фриз? Партнёру будет поставлено одно уведомление в очередь; его личный отказ останется.")
+		r.draft(ctx, b, actor, "freeze", p, texts.T("internal.telegram.feedback.026"))
 	default:
 		return false
 	}

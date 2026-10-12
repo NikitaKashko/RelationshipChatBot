@@ -6,12 +6,13 @@ import (
 	"strings"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/affection"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
 func affectionKeyboard() models.InlineKeyboardMarkup {
-	return models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: "Хочу внимания", CallbackData: "affection:attention"}}, {{Text: "Думаю о тебе", CallbackData: "affection:thinking"}, {Text: "Хочу обнять", CallbackData: "affection:hug"}}}}
+	return models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: texts.T("internal.telegram.affection.001"), CallbackData: "affection:attention"}}, {{Text: texts.T("internal.telegram.affection.002"), CallbackData: "affection:thinking"}, {Text: texts.T("internal.telegram.affection.003"), CallbackData: "affection:hug"}}}}
 }
 func (r *Router) affectionCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) bool {
 	if !strings.HasPrefix(q.Data, "affection:") {
@@ -19,22 +20,22 @@ func (r *Router) affectionCallback(ctx context.Context, b *bot.Bot, q *models.Ca
 	}
 	svc := affection.Service{Store: r.Store}
 	err := svc.Click(ctx, q.From.ID, strings.TrimPrefix(q.Data, "affection:"))
-	text := "Знак внимания принят 💛 Доставлю сразу, даже в тихие часы."
+	text := texts.T("internal.telegram.affection.004")
 	if errors.Is(err, affection.ErrCooldown) {
 		text = affection.ErrCooldown.Error()
 	} else if err != nil {
-		text = "Для знаков внимания нужна активная пара."
+		text = texts.T("internal.telegram.affection.005")
 	}
 	_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID, Text: text, ShowAlert: err != nil})
 	return true
 }
 func (r *Router) affectionMessage(ctx context.Context, b *bot.Bot, actor int64, command, args string) bool {
 	if command == "/attention" {
-		r.send(ctx, b, actor, "Какой знак внимания отправим? 💛", affectionKeyboard())
+		r.send(ctx, b, actor, texts.T("internal.telegram.affection.006"), affectionKeyboard())
 		return true
 	}
 	if command == "/names_reset" {
-		r.draft(ctx, b, actor, "notification_names", affection.Names{}, "Вернуть имя партнёра из Telegram в твоих уведомлениях?")
+		r.draft(ctx, b, actor, "notification_names", affection.Names{}, texts.T("internal.telegram.affection.007"))
 		return true
 	}
 	if command != "/names" {
@@ -47,16 +48,16 @@ func (r *Router) affectionMessage(ctx context.Context, b *bot.Bot, actor int64, 
 			return true
 		}
 		if nickname == "" {
-			nickname = "Имя из Telegram"
+			nickname = texts.T("internal.telegram.affection.008")
 		}
-		r.send(ctx, b, actor, "Как подписывать партнёра в уведомлениях, которые получаешь ты?\nСейчас: "+nickname+"\nОтправитель это имя не задаёт.", navButtons("✏️ Задать имя партнёра", "names_edit", "↩️ Имя из Telegram", "names_reset"))
+		r.send(ctx, b, actor, texts.T("internal.telegram.affection.009")+nickname+texts.T("internal.telegram.affection.010"), navButtons(texts.T("internal.telegram.affection.011"), "names_edit", texts.T("internal.telegram.affection.012"), "names_reset"))
 		return true
 	}
 	if strings.Contains(args, "|") {
-		r.send(ctx, b, actor, "Теперь задаётся только имя партнёра для тебя. Открой настройки имени.", navButtons("Имя партнёра", "names"))
+		r.send(ctx, b, actor, texts.T("internal.telegram.affection.013"), navButtons(texts.T("internal.telegram.affection.014"), "names"))
 		return true
 	}
 	p := affection.Names{Partner: strings.TrimSpace(args)}
-	r.draft(ctx, b, actor, "notification_names", p, "В твоих уведомлениях партнёр будет подписан: "+p.Partner+". Сохранить?")
+	r.draft(ctx, b, actor, "notification_names", p, texts.T("internal.telegram.affection.015")+p.Partner+texts.T("internal.telegram.affection.016"))
 	return true
 }

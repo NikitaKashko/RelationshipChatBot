@@ -4,23 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
-var menuCommands = map[string]string{
-	"🏠 Меню": "/start", "💡 Копилка": "/places", "📅 Свидания": "/plans",
-	"🤖 Помощник": "/ai", "💌 Внимание": "/attention", "🔗 Пригласить партнёра": "/invite", "⚙️ Настройки": "/settings",
-	"🎟 Пригласить пользователя": "/accessinvite",
-}
+var menuCommands = map[string]string{texts.T("internal.telegram.menu.001"): "/start", texts.T("internal.telegram.menu.002"): "/places", texts.T("internal.telegram.menu.003"): "/plans", texts.T("internal.telegram.menu.004"): "/ai", texts.T("internal.telegram.menu.005"): "/attention", texts.T("internal.telegram.menu.006"): "/invite", texts.T("internal.telegram.menu.007"): "/settings", texts.T("internal.telegram.menu.008"): "/accessinvite"}
 
 func mainKeyboard(owner bool) models.ReplyKeyboardMarkup {
-	keyboard := models.ReplyKeyboardMarkup{Keyboard: [][]models.KeyboardButton{
-		{{Text: "💡 Копилка"}, {Text: "📅 Свидания"}}, {{Text: "🤖 Помощник"}, {Text: "💌 Внимание"}},
-		{{Text: "🔗 Пригласить партнёра"}, {Text: "⚙️ Настройки"}}, {{Text: "🏠 Меню"}},
-	}, ResizeKeyboard: true, IsPersistent: true}
-	keyboard.Keyboard = append(keyboard.Keyboard, []models.KeyboardButton{{Text: "🎟 Пригласить пользователя"}})
+	keyboard := models.ReplyKeyboardMarkup{Keyboard: [][]models.KeyboardButton{{{Text: texts.T("internal.telegram.menu.002")}, {Text: texts.T("internal.telegram.menu.003")}}, {{Text: texts.T("internal.telegram.menu.004")}, {Text: texts.T("internal.telegram.menu.005")}}, {{Text: texts.T("internal.telegram.menu.006")}, {Text: texts.T("internal.telegram.menu.007")}}, {{Text: texts.T("internal.telegram.menu.001")}}}, ResizeKeyboard: true, IsPersistent: true}
+	keyboard.Keyboard = append(keyboard.Keyboard, []models.KeyboardButton{{Text: texts.T("internal.telegram.menu.008")}})
 	return keyboard
 }
 func navButtons(items ...string) models.InlineKeyboardMarkup {
@@ -37,13 +32,13 @@ func (r *Router) aiStatus(ctx context.Context, actor int64) (bool, string, error
 		return false, "", err
 	}
 	if enabled != 1 {
-		return false, "Помощник выключен", nil
+		return false, texts.T("internal.telegram.menu.009"), nil
 	}
 	pair, err := store.PairFor(ctx, r.Store.DB, actor)
 	if err != nil {
 		return false, "", err
 	}
-	status := "Помощник включён ✅"
+	status := texts.T("internal.telegram.menu.010")
 	if pair != 0 {
 		var other int
 		err = r.Store.DB.QueryRowContext(ctx, "SELECT coalesce(c.enabled,0) FROM pair_members m LEFT JOIN consents c ON c.user_id=m.user_id AND c.kind='ai' WHERE m.pair_id=? AND m.active=1 AND m.user_id<>?", pair, actor).Scan(&other)
@@ -51,7 +46,7 @@ func (r *Router) aiStatus(ctx context.Context, actor int64) (bool, string, error
 			return false, "", err
 		}
 		if other != 1 {
-			status += "\nЛичный ИИ и поиск новых мест доступны. Подбор из общей копилки скрыт, пока партнёр не включит ИИ. Копилка вручную доступна всегда."
+			status += texts.T("internal.telegram.menu.011")
 		}
 	}
 	return true, status, nil
@@ -62,16 +57,16 @@ func (r *Router) showMenu(ctx context.Context, b *bot.Bot, actor int64, paired b
 		r.send(ctx, b, actor, publicError(err), nil)
 		return
 	}
-	title := "Профиль готов 💛"
+	title := texts.T("internal.telegram.menu.012")
 	if paired {
-		title = "Вы в паре 💛"
+		title = texts.T("internal.telegram.menu.013")
 	}
 	u, err := store.UserFor(ctx, r.Store.DB, actor, false)
 	if err != nil {
 		r.send(ctx, b, actor, publicError(err), nil)
 		return
 	}
-	r.send(ctx, b, actor, fmt.Sprintf("%s\n%s\n\nВыбирай действие кнопками ниже или пиши помощнику обычным текстом.", title, status), mainKeyboard(u.Role == "owner"))
+	r.send(ctx, b, actor, fmt.Sprintf(texts.T("internal.telegram.menu.014"), title, status), mainKeyboard(u.Role == "owner"))
 }
 func (r *Router) menuCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) bool {
 	commands := map[string]string{"ai": "/ai", "ai_off": "/ai_off", "newchat": "/newchat", "clearchat": "/clearchat", "start": "/start", "invite": "/invite", "cancelinvite": "/cancelinvite", "cancelaccessinvite": "/cancelaccessinvite", "location": "/location", "names": "/names", "names_edit": "/names_edit", "names_reset": "/names_reset", "candidates": "/drafts", "drafts": "/drafts", "add": "/add", "add_manual": "/add_manual", "add_ai": "/add_ai", "draft_new": "/draft_new", "plan_new": "/plan_new", "date_ai": "/date_ai", "skip": "/skip", "entry_cancel": "/entry_cancel", "accessinvite": "/accessinvite", "quiet": "/quiet", "quiet_custom": "/quiet_custom", "quiet_cancel": "/quiet_cancel", "quiet_default": "/quiet 23:00-09:00", "quiet_late": "/quiet 00:00-10:00", "quiet_off": "/quiet 00:00-00:00"}

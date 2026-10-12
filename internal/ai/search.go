@@ -15,6 +15,7 @@ import (
 	"github.com/NikitaKashko/RelationshipChatBot/internal/actions"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/collection"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 type SearchCard struct{ Preview, SaveToken, MapURL string }
@@ -28,7 +29,9 @@ type searchTurn struct {
 }
 type searchFailure struct{}
 
-func (*searchFailure) Error() string { return "search failed; explicit retry required" }
+func (*searchFailure) Error() string {
+	return "search failed; explicit retry required"
+}
 
 var links = regexp.MustCompile(`https?://[^\s<>"']+`)
 
@@ -58,7 +61,6 @@ func searchPermission(text string) (allow, refuse bool) {
 	}
 	return false, false
 }
-
 func safeSearchLinks(text string) bool {
 	for _, raw := range links.FindAllString(text, -1) {
 		raw = strings.TrimRight(raw, ").,;!?»")
@@ -78,7 +80,6 @@ func safeSearchLinks(text string) bool {
 	}
 	return true
 }
-
 func (s *Service) directSearch(ctx context.Context, actor int64, turn *searchTurn, result Result) (Result, error) {
 	mode := "discover"
 	if len(links.FindAllString(turn.text, -1)) > 0 || strings.Contains(strings.ToLower(turn.text), "хочу добавить место:") {
@@ -89,13 +90,13 @@ func (s *Service) directSearch(ctx context.Context, actor int64, turn *searchTur
 	var failed *searchFailure
 	if errors.As(err, &failed) {
 		result.Retry, err = s.retry(ctx, actor, turn.pair, turn.conversation, turn.text)
-		result.Text = "Поиск сейчас не ответил. Запрос сохранён; повторить можно по кнопке."
+		result.Text = texts.T("internal.ai.search.022")
 		return result, err
 	}
 	if err != nil {
 		return result, err
 	}
-	result.Text = "Не удалось найти заполненную карточку. Уточни название, город или адрес."
+	result.Text = texts.T("internal.ai.search.023")
 	if data, ok := value.(map[string]any); ok {
 		if len(result.SearchCards) > 0 {
 			result.Text = searchResultTitle(mode, len(result.SearchCards))
@@ -105,9 +106,9 @@ func (s *Service) directSearch(ctx context.Context, actor int64, turn *searchTur
 	} else if data, ok := value.(map[string]string); ok {
 		switch data["status"] {
 		case "internet_forbidden_by_user":
-			result.Text = "Интернет-поиск не запускаю. Можем выбрать из копилки."
+			result.Text = texts.T("internal.ai.search.024")
 		case "search_not_configured":
-			result.Text = "Поиск ещё не настроен. Можно добавить идею вручную через /add название | категория."
+			result.Text = texts.T("internal.ai.search.025")
 		case "unsafe_link", "city_needed":
 			result.Text = data["message"]
 		}
@@ -145,10 +146,10 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 		return map[string]string{"status": "search_not_configured"}, nil
 	}
 	if !allow && p.Mode == "discover" {
-		return map[string]string{"status": "internet_not_requested", "message": "Интернет-поиск не запускался: попроси найти новые места в интернете."}, nil
+		return map[string]string{"status": "internet_not_requested", "message": texts.T("internal.ai.search.026")}, nil
 	}
 	if !safeSearchLinks(turn.text) {
-		return map[string]string{"status": "unsafe_link", "message": "Нужна публичная HTTPS-ссылка без пароля; можно написать название и город."}, nil
+		return map[string]string{"status": "unsafe_link", "message": texts.T("internal.ai.search.027")}, nil
 	}
 	if p.City == "" {
 		data, err := s.readContext(ctx, actor)
@@ -165,7 +166,7 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 		}
 	}
 	if p.City == "" && len(links.FindAllString(turn.text, -1)) == 0 {
-		return map[string]string{"status": "city_needed", "message": "Уточни город поиска. Профиль не меняется."}, nil
+		return map[string]string{"status": "city_needed", "message": texts.T("internal.ai.search.028")}, nil
 	}
 	if turn.attempted {
 		return turn.value, nil
@@ -245,11 +246,11 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 			mapURL = "https://yandex.ru/maps/?text=" + url.QueryEscape(strings.TrimSpace(card.Title+" "+card.City+" "+card.Address))
 		}
 		preview := renderSearchPreview(card, place.Why, mapURL)
+		card.Description = strings.TrimSpace(card.Description + texts.T("internal.ai.search.029"))
 		// Persist the caution and relevance together with the reviewed card, so
 		// a saved incomplete card never turns into an apparently verified record.
-		card.Description = strings.TrimSpace(card.Description + "\nПодготовлено ИИ по источникам; актуальность нужно проверить.")
 		if place.Why != "" {
-			card.Description += "\nПочему подходит: " + limitText(place.Why, 250)
+			card.Description += texts.T("internal.ai.search.030") + limitText(place.Why, 250)
 		}
 		svc := actions.Service{Store: s.Store}
 		raw, _ := json.Marshal(collection.SearchSave{Card: card})
@@ -263,62 +264,60 @@ func (s *Service) searchTool(ctx context.Context, actor int64, args string, turn
 	result.SearchCards = prepared
 	summary := found.Summary
 	if excluded > 0 {
-		summary = "Некоторые найденные места уже есть в копилке и исключены из автоматического подбора из-за фриза, отказа или архива. Уточни условия или попроси другие варианты."
+		summary = texts.T("internal.ai.search.031")
 	}
-	turn.value = map[string]any{"found": metadata, "summary": summary, "saved": false, "cards_prepared": len(prepared), "excluded": excluded, "instruction": "Карточки с источниками уже показаны отдельно. Не выдумывай больше вариантов; если совпадений мало или место неоднозначно, объясни и уточни."}
+	turn.value = map[string]any{"found": metadata, "summary": summary, "saved": false, "cards_prepared": len(prepared), "excluded": excluded, "instruction": texts.T("internal.ai.search.032")}
 	if len(prepared) > 0 || len(result.Places) > 0 || excluded > 0 {
 		titles := []string{}
 		for _, p := range found.Places {
 			titles = append(titles, p.Card.Title)
 		}
-		token, err := s.retry(ctx, actor, turn.pair, turn.conversation, "/search "+turn.text+"\nПредложи другие варианты вместо: "+strings.Join(titles, ", "))
+		token, err := s.retry(ctx, actor, turn.pair, turn.conversation, "/search "+turn.text+texts.T("internal.ai.search.033")+strings.Join(titles, ", "))
 		if err != nil {
 			return nil, err
 		}
-		result.SearchButton = &SearchButton{Label: "Ещё варианты", Token: token}
+		result.SearchButton = &SearchButton{Label: texts.T("internal.ai.search.034"), Token: token}
 	}
 	return turn.value, nil
 }
-
 func searchResultTitle(mode string, count int) string {
 	if mode == "identify" {
 		if count == 1 {
-			return "Нашёл место — проверь карточку перед добавлением 💛"
+			return texts.T("internal.ai.search.035")
 		}
-		return fmt.Sprintf("Нашёл %d варианта — выбери нужную карточку 💛", count)
+		return fmt.Sprintf(texts.T("internal.ai.search.036"), count)
 	}
-	return fmt.Sprintf("Нашёл %d вариантов. Пока ничего не добавлено 💛", count)
+	return fmt.Sprintf(texts.T("internal.ai.search.037"), count)
 }
-
 func renderSearchPreview(card collection.Input, why, mapURL string) string {
 	lines := []string{"📍 " + card.Title}
 	if len(card.Categories) > 0 {
-		lines = append(lines, "Категории: "+strings.Join(card.Categories, ", "))
+		lines = append(lines, texts.T("internal.ai.search.038")+strings.Join(card.Categories, ", "))
 	}
 	if card.Address != "" {
-		lines = append(lines, "Адрес: "+card.Address)
+		lines = append(lines, texts.T("internal.ai.search.039")+card.Address)
 	}
 	if card.Description != "" {
 		lines = append(lines, card.Description)
 	}
 	if card.Price != nil {
-		basis := "на человека"
+		basis := texts.T("internal.ai.search.040")
 		if card.PriceBasis == "couple" {
-			basis = "на двоих"
+			basis = texts.T("internal.ai.search.041")
 		}
-		lines = append(lines, "Цена: "+strconv.FormatFloat(*card.Price, 'f', -1, 64)+" ₽ "+basis)
+		lines = append(lines, texts.T("internal.ai.search.042")+strconv.FormatFloat(*card.Price, 'f', -1, 64)+" ₽ "+basis)
 	}
 	if why != "" {
-		lines = append(lines, "Почему подходит: "+limitText(why, 250))
+		lines = append(lines, texts.T("internal.ai.search.043")+limitText(why, 250))
 	}
 	if mapURL != "" {
-		lines = append(lines, "🗺 Яндекс Карты: "+mapURL)
+		lines = append(lines, texts.T("internal.ai.search.044")+mapURL)
 	}
 	for i, source := range card.Sources {
 		if i >= 2 {
 			break
 		}
-		lines = append(lines, "Источник: "+source.URL)
+		lines = append(lines, texts.T("internal.ai.search.045")+source.URL)
 	}
 	return strings.Join(lines, "\n")
 }

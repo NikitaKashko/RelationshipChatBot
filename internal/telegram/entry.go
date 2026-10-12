@@ -3,16 +3,18 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/NikitaKashko/RelationshipChatBot/internal/affection"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/collection"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"strconv"
-	"strings"
-	"time"
 )
 
 type entry struct {
@@ -32,23 +34,23 @@ func (r *Router) addOptions(ctx context.Context, b *bot.Bot, actor int64) {
 		r.startEntry(ctx, b, actor, entry{Kind: "card"})
 		return
 	}
-	r.send(ctx, b, actor, "Как добавим место? Любой способ сохранит карточку только после твоего подтверждения.", navButtons("🔎 Ссылка или описание — через ИИ", "add_ai", "✏️ Заполнить вручную", "add_manual"))
+	r.send(ctx, b, actor, texts.T("internal.telegram.entry.001"), navButtons(texts.T("internal.telegram.entry.002"), "add_ai", texts.T("internal.telegram.entry.003"), "add_manual"))
 }
 func (r *Router) dateButtons(ctx context.Context, actor int64) models.InlineKeyboardMarkup {
-	items := []string{"📝 Черновики свиданий", "drafts", "➕ Новый черновик вручную", "draft_new", "📅 Новое свидание вручную", "plan_new"}
+	items := []string{texts.T("internal.telegram.entry.004"), "drafts", texts.T("internal.telegram.entry.005"), "draft_new", texts.T("internal.telegram.entry.006"), "plan_new"}
 	if _, err := store.AIFor(ctx, r.Store.DB, actor); err == nil {
-		items = append(items, "🤖 Придумать свидание из копилки", "date_ai")
+		items = append(items, texts.T("internal.telegram.entry.007"), "date_ai")
 	}
 	return navButtons(items...)
 }
 func (r *Router) planButtons(p planning.Plan) models.InlineKeyboardMarkup {
 	if p.Status != "planned" {
-		return navButtons("📝 Черновики", "drafts")
+		return navButtons(texts.T("internal.telegram.entry.008"), "drafts")
 	}
 	id := strconv.FormatInt(p.ID, 10)
-	rows := [][]models.InlineKeyboardButton{{{Text: "✏️ Изменить", CallbackData: "entry:edit:" + id}}, {{Text: "🚫 Отменить", CallbackData: "entry:cancel:" + id}}}
+	rows := [][]models.InlineKeyboardButton{{{Text: texts.T("internal.telegram.entry.009"), CallbackData: "entry:edit:" + id}}, {{Text: texts.T("internal.telegram.entry.010"), CallbackData: "entry:cancel:" + id}}}
 	if p.Draft {
-		rows = append([][]models.InlineKeyboardButton{{{Text: "📅 Назначить дату", CallbackData: "entry:date:" + id}}}, rows...)
+		rows = append([][]models.InlineKeyboardButton{{{Text: texts.T("internal.telegram.entry.011"), CallbackData: "entry:date:" + id}}}, rows...)
 	}
 	return models.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
@@ -61,7 +63,7 @@ func (r *Router) startEntry(ctx context.Context, b *bot.Bot, actor int64, e entr
 	if e.Kind != "card" && e.Kind != "lookup" {
 		pair, err := store.PairFor(ctx, r.Store.DB, actor)
 		if err != nil || pair == 0 {
-			r.send(ctx, b, actor, "Черновики свиданий доступны после создания пары.", nil)
+			r.send(ctx, b, actor, texts.T("internal.telegram.entry.012"), nil)
 			return
 		}
 		if e.Plan.Timezone == "" {
@@ -100,19 +102,19 @@ func (r *Router) saveEntry(ctx context.Context, b *bot.Bot, actor int64, e entry
 	prompt := ""
 	switch e.Kind {
 	case "nickname":
-		prompt = "Как называть партнёра в твоих уведомлениях? Например, зайка. Это имя видишь только ты; до 60 символов."
+		prompt = texts.T("internal.telegram.entry.013")
 	case "lookup":
-		prompt = "Пришли ссылку на место или описание. Для поиска новых заведений напиши «найди новые места в интернете…»."
+		prompt = texts.T("internal.telegram.entry.014")
 	case "card":
-		prompt = []string{"Как называется место или идея?", "Укажи категории через запятую: например Покушать, Погулять. Можно свои.", "Какой адрес? Можно пропустить.", "Пришли ссылку на карту. Можно пропустить."}[e.Step]
+		prompt = []string{texts.T("internal.telegram.entry.015"), texts.T("internal.telegram.entry.016"), texts.T("internal.telegram.entry.017"), texts.T("internal.telegram.entry.018")}[e.Step]
 	case "date":
-		prompt = "На какую дату назначим свидание? YYYY-MM-DD, например 2026-10-20. Время необязательно."
+		prompt = texts.T("internal.telegram.entry.019")
 	default:
-		prompt = []string{"Как назовём свидание?", "Опиши идею свидания. Можно пропустить.", "Какие места включить? Укажи номера карточек через запятую или пропусти: свидание может быть без мест.", "Укажи дату YYYY-MM-DD. Время необязательно."}[e.Step]
+		prompt = []string{texts.T("internal.telegram.entry.020"), texts.T("internal.telegram.entry.021"), texts.T("internal.telegram.entry.022"), texts.T("internal.telegram.entry.023")}[e.Step]
 	}
-	markup := navButtons("Отмена", "entry_cancel")
+	markup := navButtons(texts.T("internal.telegram.entry.024"), "entry_cancel")
 	if (e.Kind == "card" && e.Step >= 2) || (e.Kind == "plan" && (e.Step == 1 || e.Step == 2)) {
-		markup = navButtons("Пропустить", "skip", "Отмена", "entry_cancel")
+		markup = navButtons(texts.T("internal.telegram.entry.025"), "skip", texts.T("internal.telegram.entry.024"), "entry_cancel")
 	}
 	r.send(ctx, b, actor, prompt, markup)
 }
@@ -152,7 +154,7 @@ func (r *Router) entryCallback(ctx context.Context, b *bot.Bot, q *models.Callba
 	}
 	switch parts[1] {
 	case "cancel":
-		r.draft(ctx, b, q.From.ID, "plan_cancel", planning.Cancel{ID: p.ID, Version: p.Version}, "Отменить «"+p.Title+"»?")
+		r.draft(ctx, b, q.From.ID, "plan_cancel", planning.Cancel{ID: p.ID, Version: p.Version}, texts.T("internal.telegram.collection.045")+p.Title+"»?")
 	case "date":
 		input.Draft = false
 		r.startEntry(ctx, b, q.From.ID, entry{Kind: "date", Plan: input})
@@ -189,10 +191,10 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 		return true
 	case "/date_ai":
 		if _, err := store.AIFor(ctx, r.Store.DB, actor); err != nil {
-			r.send(ctx, b, actor, "Подбор из общей копилки скрыт до согласия обоих. Создать черновик вручную можно всегда.", r.dateButtons(ctx, actor))
+			r.send(ctx, b, actor, texts.T("internal.telegram.entry.026"), r.dateButtons(ctx, actor))
 			return true
 		}
-		r.aiMessage(ctx, b, actor, "Давай придумаем свидание из нашей копилки. Подготовь черновик без обязательной даты.")
+		r.aiMessage(ctx, b, actor, texts.T("internal.telegram.entry.027"))
 		return true
 	}
 	if strings.HasPrefix(text, "/") && text != "/skip" {
@@ -215,27 +217,27 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 	switch e.Kind {
 	case "nickname":
 		if value == "" || len([]rune(value)) > 60 || strings.ContainsAny(value, "\r\n") {
-			r.send(ctx, b, actor, "Нужно короткое имя в одну строку, до 60 символов.", nil)
+			r.send(ctx, b, actor, texts.T("internal.telegram.entry.028"), nil)
 			return true
 		}
-		r.draft(ctx, b, actor, "notification_names", affection.Names{Partner: value}, "В твоих уведомлениях партнёр будет подписан: "+value+". Сохранить?")
+		r.draft(ctx, b, actor, "notification_names", affection.Names{Partner: value}, texts.T("internal.telegram.affection.015")+value+texts.T("internal.telegram.affection.016"))
 		r.Store.DB.ExecContext(ctx, "DELETE FROM drafts WHERE user_id=? AND kind='ui_entry'", actor)
 		return true
 	case "lookup":
 		r.Store.DB.ExecContext(ctx, "DELETE FROM drafts WHERE user_id=? AND kind='ui_entry'", actor)
-		r.aiMessage(ctx, b, actor, "Хочу добавить место: "+text)
+		r.aiMessage(ctx, b, actor, texts.T("internal.telegram.collection.031")+text)
 		return true
 	case "card":
 		switch e.Step {
 		case 0:
 			if value == "" {
-				r.send(ctx, b, actor, "Нужно название.", nil)
+				r.send(ctx, b, actor, texts.T("internal.telegram.entry.029"), nil)
 				return true
 			}
 			e.Card.Title = value
 		case 1:
 			if value == "" {
-				value = "Другое"
+				value = texts.T("internal.ai.search_provider.002")
 			}
 			e.Card.Categories = strings.Split(value, ",")
 		case 2:
@@ -254,7 +256,7 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 		switch e.Step {
 		case 0:
 			if value == "" {
-				r.send(ctx, b, actor, "Нужно название.", nil)
+				r.send(ctx, b, actor, texts.T("internal.telegram.entry.029"), nil)
 				return true
 			}
 			e.Plan.Title = value
@@ -266,7 +268,7 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 				for _, v := range strings.Split(value, ",") {
 					id, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
 					if err != nil {
-						r.send(ctx, b, actor, "Нужны номера через запятую или кнопка «Пропустить».", nil)
+						r.send(ctx, b, actor, texts.T("internal.telegram.entry.030"), nil)
 						return true
 					}
 					e.Plan.Places = append(e.Plan.Places, id)
@@ -289,7 +291,7 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 				r.send(ctx, b, actor, publicError(err), nil)
 				return true
 			}
-			r.draft(ctx, b, actor, "place_create", e.Card, collection.Render(collection.Card{Input: e.Card, Author: "ты"}))
+			r.draft(ctx, b, actor, "place_create", e.Card, collection.Render(collection.Card{Input: e.Card, Author: texts.T("internal.telegram.entry.031")}))
 		} else {
 			svc := planning.Service{Store: r.Store}
 			preview, err := svc.Preview(ctx, r.Store.DB, actor, e.Plan)

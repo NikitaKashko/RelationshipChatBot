@@ -13,6 +13,7 @@ import (
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -60,25 +61,24 @@ func publicError(err error) string {
 		return err.Error()
 	}
 	if errors.Is(err, store.ErrDenied) {
-		return "Это действие недоступно. Проверь приглашение и регистрацию."
+		return texts.T("internal.telegram.router.001")
 	}
 	if errors.Is(err, store.ErrConflict) {
-		return "Подтверждение устарело. Открой актуальную карточку или план и повтори изменение."
+		return texts.T("internal.telegram.router.002")
 	}
-	return "Не удалось выполнить действие. Попробуй ещё раз."
+	return texts.T("internal.telegram.router.003")
 }
-
 func (r *Router) wizard(ctx context.Context, b *bot.Bot, actor int64, w Wizard) {
 	var text string
 	var markup any
 	switch w.Stage {
 	case "city":
-		text = "Привет 💛 В каком городе ты живёшь?"
+		text = texts.T("internal.telegram.router.004")
 	case "name":
-		text = "Подпись берётся из твоего Telegram. Получатель может заменить её у себя в настройках. Нажми /skip, чтобы продолжить."
+		text = texts.T("internal.telegram.router.005")
 	case "timezone":
-		text = "В каком часовом поясе ты живёшь? Для Москвы и Санкт-Петербурга нажми кнопку ниже. Можно написать «Москва» или свой часовой пояс, например Asia/Yekaterinburg."
-		markup = button("Московское время · UTC+3", "timezone:moscow")
+		text = texts.T("internal.telegram.router.006")
+		markup = button(texts.T("internal.telegram.router.007"), "timezone:moscow")
 	case "preview":
 		e := Enrollment{Store: r.Store}
 		draft, err := e.ProfileDraft(ctx, actor, w)
@@ -86,12 +86,11 @@ func (r *Router) wizard(ctx context.Context, b *bot.Bot, actor int64, w Wizard) 
 			r.send(ctx, b, actor, publicError(err), nil)
 			return
 		}
-		text = fmt.Sprintf("Проверь профиль:\nГород: %s\nИмя: %s\nЧасовой пояс: %s", w.Profile.City, w.Profile.Name, w.Profile.Timezone)
-		markup = button("Сохранить профиль", "save:"+draft)
+		text = fmt.Sprintf(texts.T("internal.telegram.router.008"), w.Profile.City, w.Profile.Name, w.Profile.Timezone)
+		markup = button(texts.T("internal.telegram.router.009"), "save:"+draft)
 	}
 	r.send(ctx, b, actor, text, markup)
 }
-
 func (r *Router) home(ctx context.Context, b *bot.Bot, actor int64) {
 	_, err := store.UserFor(ctx, r.Store.DB, actor, false)
 	if err != nil {
@@ -112,7 +111,7 @@ func (r *Router) home(ctx context.Context, b *bot.Bot, actor int64) {
 			return
 		}
 		if proposedBy.Valid && proposedBy.Int64 != actor {
-			r.draft(ctx, b, actor, "location_confirm", identity.LocationConfirmation{Version: version}, "Подтвердить город пары: "+city.String+"\nЧасовой пояс: "+zone.String)
+			r.draft(ctx, b, actor, "location_confirm", identity.LocationConfirmation{Version: version}, texts.T("internal.telegram.router.010")+city.String+texts.T("internal.telegram.collection.030")+zone.String)
 			return
 		}
 		r.showMenu(ctx, b, actor, true)
@@ -132,12 +131,11 @@ func (r *Router) home(ctx context.Context, b *bot.Bot, actor int64) {
 			r.send(ctx, b, actor, publicError(err), nil)
 			return
 		}
-		r.send(ctx, b, actor, "Создать пару с "+name+"?", button("Создать пару", "save:"+draft))
+		r.send(ctx, b, actor, texts.T("internal.telegram.router.011")+name+"?", button(texts.T("internal.telegram.router.012"), "save:"+draft))
 		return
 	}
 	r.showMenu(ctx, b, actor, false)
 }
-
 func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
 	if q := update.CallbackQuery; q != nil {
 		if q.Message.Message == nil || q.Message.Message.Chat.Type != models.ChatTypePrivate || q.Message.Message.Chat.ID != q.From.ID {
@@ -152,7 +150,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 				if err != nil {
 					return publicError(err)
 				}
-				return "Московское время выбрано"
+				return texts.T("internal.telegram.router.013")
 			}()})
 			if err == nil {
 				r.wizard(ctx, b, q.From.ID, w)
@@ -167,7 +165,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		}
 		svc := actions.Service{Store: r.Store}
 		result, err := svc.Apply(ctx, q.From.ID, strings.TrimPrefix(q.Data, "save:"))
-		text := "Сохранено"
+		text := texts.T("internal.telegram.router.014")
 		if err != nil {
 			text = publicError(err)
 		} else {
@@ -175,7 +173,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 				CollectionAdded bool `json:"collection_added"`
 			}
 			if json.Unmarshal(result, &receipt) == nil && receipt.CollectionAdded {
-				text = "Добавлено в коллекцию"
+				text = texts.T("internal.telegram.router.015")
 			}
 		}
 		_, _ = b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{CallbackQueryID: q.ID, Text: text, ShowAlert: err != nil})
@@ -185,7 +183,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 			r.duplicate(ctx, b, q.From.ID, err)
 			var stale *planning.Stale
 			if errors.As(err, &stale) {
-				r.send(ctx, b, q.From.ID, "План уже изменился. Вот актуальная версия — подготовь правку заново.", nil)
+				r.send(ctx, b, q.From.ID, texts.T("internal.telegram.router.016"), nil)
 				raw, _ := json.Marshal(map[string]int64{"plan": stale.ID})
 				r.saved(ctx, b, q.From.ID, raw)
 			}
@@ -220,7 +218,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		}
 		u, err := store.UserFor(ctx, r.Store.DB, actor, true)
 		if err != nil {
-			r.send(ctx, b, actor, "Бот доступен по приглашению. Попроси ссылку у владельца или партнёра.", nil)
+			r.send(ctx, b, actor, texts.T("internal.telegram.router.017"), nil)
 			return
 		}
 		if u.Status == "ready" {
@@ -241,16 +239,16 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 	}
 	u, err := store.UserFor(ctx, r.Store.DB, actor, true)
 	if err != nil {
-		r.send(ctx, b, actor, "Начни с приглашения и /start.", nil)
+		r.send(ctx, b, actor, texts.T("internal.telegram.router.018"), nil)
 		return
 	}
 	if u.Status != "ready" {
 		if text == "" {
-			r.send(ctx, b, actor, "Пришли ответ текстом. Голосовые подключим следующим этапом.", nil)
+			r.send(ctx, b, actor, texts.T("internal.telegram.router.019"), nil)
 			return
 		}
 		if strings.HasPrefix(text, "/") && text != "/skip" {
-			r.send(ctx, b, actor, "Продолжи регистрацию через /start.", nil)
+			r.send(ctx, b, actor, texts.T("internal.telegram.router.020"), nil)
 			return
 		}
 		w, err := e.Input(ctx, actor, text)
@@ -271,37 +269,37 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		return
 	}
 	if text == "/settings" {
-		markup := navButtons("🌙 Тихие часы", "quiet", "🤖 Помощник", "ai", "🌍 Город пары", "location", "💛 Имя партнёра в уведомлениях", "names", "📝 Черновики свиданий", "candidates", "🚫 Отменить приглашения партнёра", "cancelinvite", "🏠 Главное меню", "start")
-		markup.InlineKeyboard = append([][]models.InlineKeyboardButton{{{Text: "🎟 Пригласить пользователя", CallbackData: "menu:accessinvite"}}, {{Text: "🚫 Отменить ссылку доступа", CallbackData: "menu:cancelaccessinvite"}}}, markup.InlineKeyboard...)
-		r.send(ctx, b, actor, "Настройки 💛", markup)
+		markup := navButtons(texts.T("internal.telegram.router.021"), "quiet", texts.T("internal.telegram.menu.004"), "ai", texts.T("internal.telegram.router.022"), "location", texts.T("internal.telegram.router.023"), "names", texts.T("internal.telegram.entry.004"), "candidates", texts.T("internal.telegram.router.024"), "cancelinvite", texts.T("internal.telegram.ai.017"), "start")
+		markup.InlineKeyboard = append([][]models.InlineKeyboardButton{{{Text: texts.T("internal.telegram.menu.008"), CallbackData: "menu:accessinvite"}}, {{Text: texts.T("internal.telegram.router.025"), CallbackData: "menu:cancelaccessinvite"}}}, markup.InlineKeyboard...)
+		r.send(ctx, b, actor, texts.T("internal.telegram.router.026"), markup)
 		return
 	}
 	if text == "/accessinvite" {
 		token, err := ids.Issue(ctx, actor, "access")
 		if err != nil {
 			if errors.Is(err, identity.ErrReferralUsed) {
-				r.send(ctx, b, actor, "Ты уже пригласил одного пользователя — личная реферальная ссылка использована. Приглашение партнёра остаётся доступно отдельно.", nil)
+				r.send(ctx, b, actor, texts.T("internal.telegram.router.027"), nil)
 				return
 			}
 			if errors.Is(err, identity.ErrAccessInviteActive) {
-				r.send(ctx, b, actor, "У тебя уже есть действующая ссылка доступа. Её можно отправить человеку или отменить в настройках и выпустить новую.", nil)
+				r.send(ctx, b, actor, texts.T("internal.telegram.router.028"), nil)
 				return
 			}
 			r.send(ctx, b, actor, publicError(err), nil)
 			return
 		}
-		limit := "После регистрации этого человека твоя одна реферальная возможность будет использована."
+		limit := texts.T("internal.telegram.router.029")
 		if u.Role == "owner" {
-			limit = "Для владельца количество таких приглашений не ограничено."
+			limit = texts.T("internal.telegram.router.030")
 		}
-		r.send(ctx, b, actor, "Приглашение нового пользователя 💛\nhttps://t.me/"+r.Username+"?start="+token+"\nОдноразовая ссылка, действует 7 дней. Она даёт доступ к боту, а пару пользователь создаёт отдельно. "+limit, nil)
+		r.send(ctx, b, actor, texts.T("internal.telegram.router.031")+r.Username+"?start="+token+texts.T("internal.telegram.router.032")+limit, nil)
 		return
 	}
 	if text == "/cancelaccessinvite" {
 		if err := ids.CancelAccess(ctx, actor); err != nil {
 			r.send(ctx, b, actor, publicError(err), nil)
 		} else {
-			r.send(ctx, b, actor, "Непринятая ссылка доступа отменена. Можно выпустить новую через «🎟 Пригласить пользователя».", nil)
+			r.send(ctx, b, actor, texts.T("internal.telegram.router.033"), nil)
 		}
 		return
 	}
@@ -314,11 +312,11 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 			r.send(ctx, b, actor, publicError(err), nil)
 			return
 		}
-		r.send(ctx, b, actor, "Пригласи партнёра: https://t.me/"+r.Username+"?start="+token+"\nСсылка одноразовая, действует 7 дней. Получатель подтвердит создание пары.", nil)
+		r.send(ctx, b, actor, texts.T("internal.telegram.router.034")+r.Username+"?start="+token+texts.T("internal.telegram.router.035"), nil)
 		return
 	}
 	if m.Voice != nil {
-		r.send(ctx, b, actor, "Голосовые отложили. Напиши запрос текстом 💛", nil)
+		r.send(ctx, b, actor, texts.T("internal.telegram.router.036"), nil)
 		return
 	}
 	if text == "/cancelinvite" {
@@ -326,7 +324,7 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 		if err != nil {
 			r.send(ctx, b, actor, publicError(err), nil)
 		} else {
-			r.send(ctx, b, actor, "Твои действующие приглашения в пару отменены. /invite — создать новое.", nil)
+			r.send(ctx, b, actor, texts.T("internal.telegram.router.037"), nil)
 		}
 		return
 	}
@@ -336,5 +334,5 @@ func (r *Router) Handle(ctx context.Context, b *bot.Bot, update *models.Update) 
 	if r.aiMessage(ctx, b, actor, text) {
 		return
 	}
-	r.send(ctx, b, actor, "/start — меню, /places — идеи, /plans — свидания. Для помощника включи /ai и пиши обычным текстом.", nil)
+	r.send(ctx, b, actor, texts.T("internal.telegram.router.038"), nil)
 }

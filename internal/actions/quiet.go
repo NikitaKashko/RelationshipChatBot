@@ -3,6 +3,8 @@ package actions
 import (
 	"errors"
 	"time"
+
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 type QuietHours struct {
@@ -14,7 +16,7 @@ func (q QuietHours) Validate() error {
 	for _, v := range []string{q.Start, q.End} {
 		t, e := time.Parse("15:04", v)
 		if e != nil || t.Format("15:04") != v {
-			return errors.New("укажи время в формате ЧЧ:ММ")
+			return errors.New(texts.T("internal.actions.quiet.001"))
 		}
 	}
 	return nil

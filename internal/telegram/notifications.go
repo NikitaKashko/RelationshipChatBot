@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/notifications"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 	"github.com/go-telegram/bot"
 )
 
@@ -32,38 +33,38 @@ func (r *Router) NotificationSender(b *bot.Bot) notifications.Sender {
 		text := ""
 		switch m.Kind {
 		case "plan_saved":
-			text = "Свидание сохранено: " + strings.Join(p.Changed, ", ") + "\n" + p.Summary
+			text = texts.T("internal.telegram.notifications.001") + strings.Join(p.Changed, ", ") + "\n" + p.Summary
 			if strings.HasPrefix(p.Summary, "📝") {
-				text = "Партнёр сохранил черновик свидания 💛\n" + p.Summary
+				text = texts.T("internal.telegram.notifications.002") + p.Summary
 			}
 		case "plan_cancelled":
-			text = "Свидание «" + p.Title + "» отменено. Идеи остаются в копилке."
+			text = texts.T("internal.telegram.notifications.003") + p.Title + texts.T("internal.telegram.notifications.004")
 		case "plan_not_went":
-			text = fmt.Sprintf("Для свидания #%d отмечено «Не пошли». Места остаются доступными.", p.Plan)
+			text = fmt.Sprintf(texts.T("internal.telegram.notifications.005"), p.Plan)
 		case "reminder":
-			text = fmt.Sprintf("Скоро свидание 💛 План #%d — /plans", p.Plan)
+			text = fmt.Sprintf(texts.T("internal.telegram.notifications.006"), p.Plan)
 		case "feedback":
 			var visit int64
 			if err := r.Store.DB.QueryRowContext(ctx, "SELECT coalesce(max(id),0) FROM visits WHERE plan_id=? AND pair_id=? AND valid=1", p.Plan, m.Pair).Scan(&visit); err != nil {
 				return 0, notifications.ErrPermanent
 			}
 			if visit != 0 {
-				text = fmt.Sprintf("Как тебе места на свидании? Факт посещения уже отмечен — осталось только твоё впечатление 💛\n/visitinfo %d", visit)
+				text = fmt.Sprintf(texts.T("internal.telegram.notifications.007"), visit)
 			} else {
-				text = fmt.Sprintf("Как прошло свидание? 💛\nКогда захочешь, отметь посещённые места через /visit; если не пошли — /notwent %d. Отвечать сейчас необязательно, напоминать не буду.", p.Plan)
+				text = fmt.Sprintf(texts.T("internal.telegram.notifications.008"), p.Plan)
 			}
 		case "freeze_changed":
-			text = fmt.Sprintf("У места #%d изменён общий фриз: %s. Ручной выбор доступен.", p.Place, p.Until)
+			text = fmt.Sprintf(texts.T("internal.telegram.notifications.009"), p.Place, p.Until)
 			if p.Until == "" {
-				text = fmt.Sprintf("У места #%d снят общий фриз. Личные предпочтения остаются.", p.Place)
+				text = fmt.Sprintf(texts.T("internal.telegram.notifications.010"), p.Place)
 			}
 		case "visit_corrected":
-			text = fmt.Sprintf("Исправлена ошибочная отметка посещения #%d. Автоматический фриз пересчитан, ручные настройки сохранены.", p.Visit)
+			text = fmt.Sprintf(texts.T("internal.telegram.notifications.011"), p.Visit)
 		case "location_proposal":
-			text = "Партнёр предложил город пары: " + p.City + " (" + p.Timezone + "). Открой /start, чтобы подтвердить."
+			text = texts.T("internal.telegram.notifications.012") + p.City + " (" + p.Timezone + texts.T("internal.telegram.notifications.013")
 		case "pair_created":
-			text = "Вы теперь пара 💛 Открой /start, чтобы продолжить."
-		case "affection", "budget_target", "partner_registered":
+			text = texts.T("internal.telegram.notifications.014")
+		case "affection", "budget_target", "partner_registered", "release_announcement":
 			text = p.Text
 		default:
 			return 0, notifications.ErrPermanent
@@ -71,7 +72,7 @@ func (r *Router) NotificationSender(b *bot.Bot) notifications.Sender {
 		// One outbox row sends one Telegram message, with no partial multi-send.
 		runes := []rune(text)
 		if len(runes) > 3500 {
-			text = string(runes[:3500]) + "\nПолный план — /plans"
+			text = string(runes[:3500]) + texts.T("internal.telegram.notifications.015")
 		}
 		msg, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: m.Recipient, Text: text})
 		if err == nil {

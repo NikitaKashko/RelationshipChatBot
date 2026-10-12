@@ -7,15 +7,16 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/NikitaKashko/RelationshipChatBot/internal/affection"
 	"io"
 	"strings"
 
+	"github.com/NikitaKashko/RelationshipChatBot/internal/affection"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/collection"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/feedback"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 type Service struct{ Store *store.Store }
@@ -51,19 +52,17 @@ func aiPermission(ctx context.Context, q store.Query, actor int64, kind string, 
 	}
 	return store.ErrDenied
 }
-
 func decode(raw []byte, v any) error {
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.DisallowUnknownFields()
 	if err := d.Decode(v); err != nil {
-		return errors.New("неверные аргументы действия")
+		return errors.New(texts.T("internal.actions.actions.001"))
 	}
 	if err := d.Decode(new(any)); err != io.EOF {
-		return errors.New("лишние данные действия")
+		return errors.New(texts.T("internal.actions.actions.002"))
 	}
 	return nil
 }
-
 func validate(kind string, raw []byte) error {
 	if strings.HasPrefix(kind, "ai:") {
 		kind = strings.TrimPrefix(kind, "ai:")
@@ -142,10 +141,9 @@ func validate(kind string, raw []byte) error {
 			Enabled bool   `json:"enabled"`
 		}))
 	default:
-		return errors.New("неизвестное действие")
+		return errors.New(texts.T("internal.actions.actions.003"))
 	}
 }
-
 func (s *Service) Prepare(ctx context.Context, actor int64, kind string, raw []byte) (id string, err error) {
 	if err = validate(kind, raw); err != nil {
 		return
@@ -197,7 +195,6 @@ func (s *Service) Prepare(ctx context.Context, actor int64, kind string, raw []b
 	})
 	return
 }
-
 func (s *Service) Apply(ctx context.Context, actor int64, id string) (result json.RawMessage, err error) {
 	err = s.Store.Write(ctx, func(q store.Query) error {
 		var kind, raw string
@@ -436,7 +433,7 @@ func (s *Service) Apply(ctx context.Context, actor int64, id string) (result jso
 			}
 			_ = decode([]byte(raw), &p)
 			if p.Kind != "ai" && p.Kind != "notes" && p.Kind != "reviews" && p.Kind != "external_audio" {
-				return errors.New("неизвестное согласие")
+				return errors.New(texts.T("internal.actions.actions.004"))
 			}
 			if _, e = q.ExecContext(ctx, `INSERT INTO consents(user_id,kind,enabled,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,kind) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at`, actor, p.Kind, p.Enabled, s.Store.Now().Unix()); e != nil {
 				return e

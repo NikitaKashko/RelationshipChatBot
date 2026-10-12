@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 // Billing is bookkeeping, never admission control. A zero exchange rate leaves
@@ -43,7 +44,6 @@ func Estimate(model string, u *Usage, fx float64) (usd, rub *float64) {
 	}
 	return
 }
-
 func (s *Service) account(ctx context.Context, id int64, u *Usage, success bool) error {
 	return s.Store.Write(ctx, func(q store.Query) error {
 		var input, cached, output any
@@ -68,7 +68,7 @@ func (s *Service) account(ctx context.Context, id int64, u *Usage, success bool)
 		if total < s.Billing.TargetRUB {
 			return nil
 		}
-		payload, _ := json.Marshal(map[string]string{"text": fmt.Sprintf("Оценка расходов API за %s достигла %.2f ₽ (ориентир %.2f ₽). Запросов с неполной или неизвестной стоимостью: %d. Запросы продолжают работать; точный счёт — у провайдера.", start.Format("2006-01"), total, s.Billing.TargetRUB, unknown)})
+		payload, _ := json.Marshal(map[string]string{"text": fmt.Sprintf(texts.T("internal.ai.billing.001"), start.Format("2006-01"), total, s.Billing.TargetRUB, unknown)})
 		_, err = q.ExecContext(ctx, `INSERT OR IGNORE INTO notifications(semantic_key,recipient_id,kind,payload,available_at,expires_at,created_at) SELECT 'budget:'||?||':'||id,id,'budget_target',?,?,?,? FROM users WHERE role='owner' AND status='ready'`, start.Format("2006-01"), string(payload), now.Unix(), now.Add(7*24*time.Hour).Unix(), now.Unix())
 		return err
 	})

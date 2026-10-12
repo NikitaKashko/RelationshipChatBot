@@ -12,14 +12,15 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 	_ "modernc.org/sqlite"
 )
 
 //go:embed schema.sql
 var schema string
 
-var ErrDenied = errors.New("данные недоступны: закончи регистрацию по приглашению")
-var ErrConflict = errors.New("данные изменились или подтверждение устарело")
+var ErrDenied = errors.New(texts.T("internal.store.store.001"))
+var ErrConflict = errors.New(texts.T("internal.store.store.002"))
 
 type Query interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
@@ -98,16 +99,7 @@ func (s *Store) migrate(ctx context.Context, path string) error {
 			if current != 1 {
 				return errors.New("schema changed during migration")
 			}
-			_, err := q.ExecContext(ctx, `ALTER TABLE plans ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE plans ADD COLUMN date_only INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE plans ADD COLUMN description TEXT NOT NULL DEFAULT '';
-ALTER TABLE plans ADD COLUMN has_end INTEGER NOT NULL DEFAULT 1;
-INSERT INTO plans(pair_id,author_id,title,start_at,end_at,timezone,created_at,is_draft)
-SELECT pair_id,min(added_by),'Идеи из прежних кандидатов',0,1,coalesce((SELECT timezone FROM pairs WHERE id=pair_id),'Europe/Moscow'),0,1 FROM candidates GROUP BY pair_id;
-INSERT INTO plan_items(plan_id,place_id,position,snapshot)
-SELECT p.id,c.place_id,c.position,json_object('id',c.place_id,'title',x.title,'address',x.address,'city',x.city,'map_url',x.map_url,'description',x.description,'categories',json('[]')) FROM candidates c JOIN plans p ON p.pair_id=c.pair_id AND p.is_draft=1 JOIN places x ON x.id=c.place_id;
-DELETE FROM candidates;
-PRAGMA user_version=2;`)
+			_, err := q.ExecContext(ctx, "ALTER TABLE plans ADD COLUMN is_draft INTEGER NOT NULL DEFAULT 0;\nALTER TABLE plans ADD COLUMN date_only INTEGER NOT NULL DEFAULT 0;\nALTER TABLE plans ADD COLUMN description TEXT NOT NULL DEFAULT '';\nALTER TABLE plans ADD COLUMN has_end INTEGER NOT NULL DEFAULT 1;\nINSERT INTO plans(pair_id,author_id,title,start_at,end_at,timezone,created_at,is_draft)\nSELECT pair_id,min(added_by),'Идеи из прежних кандидатов',0,1,coalesce((SELECT timezone FROM pairs WHERE id=pair_id),'Europe/Moscow'),0,1 FROM candidates GROUP BY pair_id;\nINSERT INTO plan_items(plan_id,place_id,position,snapshot)\nSELECT p.id,c.place_id,c.position,json_object('id',c.place_id,'title',x.title,'address',x.address,'city',x.city,'map_url',x.map_url,'description',x.description,'categories',json('[]')) FROM candidates c JOIN plans p ON p.pair_id=c.pair_id AND p.is_draft=1 JOIN places x ON x.id=c.place_id;\nDELETE FROM candidates;\nPRAGMA user_version=2;")
 			return err
 		})
 	}
@@ -166,7 +158,6 @@ PRAGMA user_version=2;`)
 	}
 	return s.migrate(ctx, path)
 }
-
 func (s *Store) importLegacy(ctx context.Context, q Query) error {
 	now := s.Now().Unix()
 	if _, err := q.ExecContext(ctx, "INSERT INTO users(id,name,code,notification_name,created_at) SELECT id,name,code,name,? FROM legacy_users", now); err != nil {
@@ -209,15 +200,11 @@ func (s *Store) importLegacy(ctx context.Context, q Query) error {
 	if hasPlaces == 0 {
 		return nil
 	}
-	statements := []string{
-		`INSERT INTO places(id,author_id,personal_user_id,pair_id,title,description,created_at)
+	statements := []string{`INSERT INTO places(id,author_id,personal_user_id,pair_id,title,description,created_at)
    SELECT p.id,p.owner,CASE WHEN a.pair_id=b.pair_id THEN NULL ELSE p.owner END,
    CASE WHEN a.pair_id=b.pair_id THEN a.pair_id ELSE NULL END,p.title,p.note,?
    FROM legacy_places p LEFT JOIN pair_members a ON a.user_id=p.owner AND a.active=1
-   LEFT JOIN pair_members b ON b.user_id=p.partner AND b.active=1`,
-		`INSERT OR IGNORE INTO categories(scope,title) SELECT CASE WHEN p.pair_id IS NULL THEN 'user:'||p.personal_user_id ELSE 'pair:'||p.pair_id END,l.category FROM places p JOIN legacy_places l ON l.id=p.id`,
-		`INSERT INTO place_categories SELECT p.id,c.id FROM places p JOIN legacy_places l ON l.id=p.id JOIN categories c ON c.title=l.category AND c.scope=CASE WHEN p.pair_id IS NULL THEN 'user:'||p.personal_user_id ELSE 'pair:'||p.pair_id END`,
-	}
+   LEFT JOIN pair_members b ON b.user_id=p.partner AND b.active=1`, `INSERT OR IGNORE INTO categories(scope,title) SELECT CASE WHEN p.pair_id IS NULL THEN 'user:'||p.personal_user_id ELSE 'pair:'||p.pair_id END,l.category FROM places p JOIN legacy_places l ON l.id=p.id`, `INSERT INTO place_categories SELECT p.id,c.id FROM places p JOIN legacy_places l ON l.id=p.id JOIN categories c ON c.title=l.category AND c.scope=CASE WHEN p.pair_id IS NULL THEN 'user:'||p.personal_user_id ELSE 'pair:'||p.pair_id END`}
 	for i, stmt := range statements {
 		var args []any
 		if i == 0 {
@@ -257,7 +244,6 @@ func UserFor(ctx context.Context, q Query, actor int64, onboarding bool) (User, 
 	}
 	return u, nil
 }
-
 func PairFor(ctx context.Context, q Query, actor int64) (int64, error) {
 	var id int64
 	err := q.QueryRowContext(ctx, `SELECT p.id FROM pairs p JOIN pair_members m ON m.pair_id=p.id WHERE m.user_id=? AND m.active=1 AND p.status='active'`, actor).Scan(&id)
@@ -266,7 +252,6 @@ func PairFor(ctx context.Context, q Query, actor int64) (int64, error) {
 	}
 	return id, err
 }
-
 func PlaceFor(ctx context.Context, q Query, actor, id int64) error {
 	if _, err := UserFor(ctx, q, actor, false); err != nil {
 		return err
@@ -284,7 +269,6 @@ func PlaceFor(ctx context.Context, q Query, actor, id int64) error {
 	}
 	return nil
 }
-
 func PlanFor(ctx context.Context, q Query, actor, id int64) error {
 	if _, err := UserFor(ctx, q, actor, false); err != nil {
 		return err

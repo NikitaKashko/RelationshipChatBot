@@ -2,14 +2,16 @@ package dashboard
 
 import (
 	"context"
-	"github.com/NikitaKashko/RelationshipChatBot/internal/backup"
-	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/NikitaKashko/RelationshipChatBot/internal/backup"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 )
 
 func TestAuthenticationOriginCSRFAndPrivacy(t *testing.T) {
@@ -75,4 +77,25 @@ func TestAuthenticationOriginCSRFAndPrivacy(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 	_ = http.MethodGet
+}
+
+func TestPanelTemplateIsRuntimeValidated(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "panel.html")
+	if err := os.WriteFile(path, []byte(`changed {{.Health}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	view, err := readView(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err = view.Execute(&output, Page{Health: "runtime"}); err != nil || output.String() != "changed runtime" {
+		t.Fatal(output.String(), err)
+	}
+	if err = os.WriteFile(path, []byte(`{{if}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = readView(path); err == nil {
+		t.Fatal("invalid runtime template accepted")
+	}
 }

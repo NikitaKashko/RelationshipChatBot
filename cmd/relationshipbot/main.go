@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/ai"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/announcements"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/backup"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/config"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/dashboard"
@@ -23,18 +24,38 @@ import (
 	"github.com/NikitaKashko/RelationshipChatBot/internal/sandbox"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/telegram"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
 func run() error {
-	cfg, err := config.Load(".env")
-	if err != nil {
-		return err
-	}
 	command := "check"
 	if len(os.Args) > 1 {
 		command = os.Args[1]
+	}
+	if err := texts.Validate(); err != nil {
+		return err
+	}
+	if command == "check-content" {
+		release, err := announcements.Current()
+		if err != nil {
+			return err
+		}
+		if len(os.Args) > 2 {
+			value, ok := texts.Lookup(os.Args[2])
+			if !ok {
+				return fmt.Errorf("unknown text key %q", os.Args[2])
+			}
+			fmt.Println(value)
+			return nil
+		}
+		fmt.Printf("CONTENT_OK texts=%d release=%s enabled=%t\n", texts.Count(), release.ID, release.Enabled)
+		return nil
+	}
+	cfg, err := config.Load(".env")
+	if err != nil {
+		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -45,7 +66,8 @@ func run() error {
 		if cfg.TestBotToken == "" || cfg.TestBotToken == cfg.BotToken {
 			return fmt.Errorf("separate TEST_BOT_TOKEN required")
 		}
-		b, e := bot.New(cfg.TestBotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {}))
+		b, e := bot.New(cfg.TestBotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {
+		}))
 		if e != nil {
 			return fmt.Errorf("invalid test configuration")
 		}
@@ -57,7 +79,8 @@ func run() error {
 			return fmt.Errorf("test bot matches production bot")
 		}
 		if cfg.BotToken != "" {
-			prod, e := bot.New(cfg.BotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {}))
+			prod, e := bot.New(cfg.BotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {
+			}))
 			if e != nil {
 				return fmt.Errorf("invalid production configuration")
 			}
@@ -100,7 +123,8 @@ func run() error {
 		if err = jpeg.Encode(&jpegData, img, &jpeg.Options{Quality: 95}); err != nil {
 			return fmt.Errorf("cannot encode avatar")
 		}
-		b, err := bot.New(cfg.BotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {}))
+		b, err := bot.New(cfg.BotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {
+		}))
 		if err != nil {
 			return fmt.Errorf("invalid Telegram configuration")
 		}
@@ -143,14 +167,14 @@ func run() error {
 	case "check-search":
 		searchCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
-		query := "Найди 3 новых кафе для свидания в центре Москвы. Нужны реальные названия, адреса и источники; неизвестные цены не придумывай."
+		query := texts.T("cmd.relationshipbot.main.001")
 		mode := "discover"
 		if len(os.Args) > 2 {
 			query = os.Args[2]
 			mode = "identify"
 		}
 		provider := ai.DeepSeekSearch{Key: cfg.DeepSeekKey, Model: cfg.DeepSeekModel}
-		found, err := provider.Search(searchCtx, ai.SearchRequest{Query: query, City: "Москва", Mode: mode})
+		found, err := provider.Search(searchCtx, ai.SearchRequest{Query: query, City: texts.T("cmd.relationshipbot.main.002"), Mode: mode})
 		if err != nil {
 			return fmt.Errorf("native search check failed: %s", err.Error())
 		}
@@ -174,7 +198,7 @@ func run() error {
 		return checkAIFlow(flowCtx, cfg)
 	case "check-ai":
 		provider := ai.DeepSeek{Key: cfg.DeepSeekKey, Model: cfg.DeepSeekModel}
-		answer, err := provider.Complete(ctx, []ai.Message{{Role: "user", Content: "Ответь одним словом: OK"}}, nil)
+		answer, err := provider.Complete(ctx, []ai.Message{{Role: "user", Content: texts.T("cmd.relationshipbot.main.003")}}, nil)
 		if err != nil {
 			return fmt.Errorf("DeepSeek credential check failed")
 		}
@@ -192,6 +216,9 @@ func run() error {
 			return fmt.Errorf("database initialization failed")
 		}
 		defer db.DB.Close()
+		if _, err = announcements.EnqueueCurrent(ctx, db); err != nil {
+			return fmt.Errorf("release announcement initialization failed: %w", err)
+		}
 		r := &telegram.Router{Store: db}
 		r.AI = &ai.Service{Store: db, Model: cfg.DeepSeekModel, Billing: ai.Billing{USDRUB: cfg.USDRUB, TargetRUB: cfg.BudgetTargetRUB}}
 		if cfg.DeepSeekKey != "" {
@@ -202,7 +229,8 @@ func run() error {
 		if err = r.AI.Prune(ctx); err != nil {
 			return fmt.Errorf("AI history cleanup failed")
 		}
-		b, err := bot.New(cfg.BotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {}), bot.WithDefaultHandler(r.Handle))
+		b, err := bot.New(cfg.BotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {
+		}), bot.WithDefaultHandler(r.Handle))
 		if err != nil {
 			return fmt.Errorf("invalid Telegram configuration")
 		}
@@ -261,7 +289,8 @@ func run() error {
 		if cfg.BotToken == "" {
 			return fmt.Errorf("BOT_TOKEN is missing")
 		}
-		b, err := bot.New(cfg.BotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {}))
+		b, err := bot.New(cfg.BotToken, bot.WithSkipGetMe(), bot.WithErrorsHandler(func(error) {
+		}))
 		if err != nil {
 			return fmt.Errorf("invalid Telegram configuration")
 		}
@@ -293,7 +322,6 @@ func run() error {
 		return fmt.Errorf("commands: check, check-ai, check-ai-flow, migrate, bootstrap, serve, panel, backup, verify-backup")
 	}
 }
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

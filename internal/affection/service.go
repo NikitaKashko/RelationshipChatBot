@@ -13,14 +13,11 @@ import (
 	"time"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
-var ErrCooldown = errors.New("подожди минутку перед следующим знаком внимания")
-var phrases = map[string][]string{
-	"attention": {"%s хочет твоего внимания 💛", "%s скучает по твоему вниманию 💛", "%s ждёт немного твоего тепла 💛", "%s хочет побыть с тобой 💛", "%s ждёт твоего сообщения 💛", "%s мечтает почувствовать тебя рядом 💛"},
-	"thinking":  {"%s думает о тебе 💭", "%s снова вспоминает тебя 💛", "%s вспоминает ваши моменты 💛", "%s мысленно рядом с тобой 💭", "%s улыбается, думая о тебе 💛", "%s передаёт тебе тёплую мысль 💭"},
-	"hug":       {"%s хочет тебя обнять 🤗", "%s отправляет тебе мысленные объятия 🤗", "%s хочет прижаться к тебе 💛", "%s ждёт ваших следующих объятий 🤗", "%s хочет согреть тебя объятием 💛", "%s передаёт тебе крепкое объятие 🤗"},
-}
+var ErrCooldown = errors.New(texts.T("internal.affection.service.001"))
+var phrases = map[string][]string{"attention": {texts.T("internal.affection.service.002"), texts.T("internal.affection.service.003"), texts.T("internal.affection.service.004"), texts.T("internal.affection.service.005"), texts.T("internal.affection.service.006"), texts.T("internal.affection.service.007")}, "thinking": {texts.T("internal.affection.service.008"), texts.T("internal.affection.service.009"), texts.T("internal.affection.service.010"), texts.T("internal.affection.service.011"), texts.T("internal.affection.service.012"), texts.T("internal.affection.service.013")}, "hug": {texts.T("internal.affection.service.014"), texts.T("internal.affection.service.015"), texts.T("internal.affection.service.016"), texts.T("internal.affection.service.017"), texts.T("internal.affection.service.018"), texts.T("internal.affection.service.019")}}
 
 type Service struct{ Store *store.Store }
 type Names struct {
@@ -33,12 +30,11 @@ func (s *Service) Names(ctx context.Context, q store.Query, actor int64, p Names
 	}
 	p.Partner = strings.TrimSpace(p.Partner)
 	if len([]rune(p.Partner)) > 60 || strings.ContainsAny(p.Partner, "\r\n") {
-		return errors.New("имя должно быть коротким и в одну строку")
+		return errors.New(texts.T("internal.affection.service.020"))
 	}
 	_, err := q.ExecContext(ctx, "UPDATE users SET partner_nickname=? WHERE id=?", p.Partner, actor)
 	return err
 }
-
 func (s *Service) Click(ctx context.Context, actor int64, kind string) error {
 	options, ok := phrases[kind]
 	if !ok {

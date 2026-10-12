@@ -15,9 +15,10 @@ import (
 	"time"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
-var Starters = []string{"Погулять", "Покушать", "Музыка", "Кино", "Поездка", "Другое"}
+var Starters = []string{texts.T("internal.collection.places.001"), texts.T("internal.collection.places.002"), texts.T("internal.collection.places.003"), texts.T("internal.collection.places.004"), texts.T("internal.collection.places.005"), texts.T("internal.ai.search_provider.002")}
 
 type Source struct {
 	URL         string `json:"url"`
@@ -55,7 +56,9 @@ type Card struct {
 }
 type Duplicate struct{ ID int64 }
 
-func (d *Duplicate) Error() string { return "место уже есть в коллекции" }
+func (d *Duplicate) Error() string {
+	return texts.T("internal.collection.places.006")
+}
 
 type Service struct{ Store *store.Store }
 
@@ -75,44 +78,42 @@ func ValidURL(raw string) bool {
 	}
 	return true
 }
-
 func Validate(p Input) error {
 	if strings.TrimSpace(p.Title) == "" || len([]rune(p.Title)) > 200 {
-		return errors.New("укажи название до 200 символов")
+		return errors.New(texts.T("internal.collection.places.007"))
 	}
 	if len(p.Categories) == 0 || len(p.Categories) > 20 {
-		return errors.New("укажи хотя бы одну категорию")
+		return errors.New(texts.T("internal.collection.places.008"))
 	}
 	for _, c := range p.Categories {
 		if strings.TrimSpace(c) == "" || len([]rune(c)) > 60 {
-			return errors.New("неверная категория")
+			return errors.New(texts.T("internal.collection.places.009"))
 		}
 	}
 	if p.MapURL != "" && !ValidURL(p.MapURL) {
-		return errors.New("неверная ссылка на карту")
+		return errors.New(texts.T("internal.collection.places.010"))
 	}
 	if p.Price != nil && (math.IsNaN(*p.Price) || math.IsInf(*p.Price, 0) || *p.Price < 0 || (p.PriceBasis != "person" && p.PriceBasis != "couple")) {
-		return errors.New("цена требует значения и указания на человека или на двоих")
+		return errors.New(texts.T("internal.collection.places.011"))
 	}
 	if p.Price == nil && p.PriceBasis != "" {
-		return errors.New("не указана цена")
+		return errors.New(texts.T("internal.collection.places.012"))
 	}
 	if len(p.Photos) > 3 {
-		return errors.New("доступно до трёх фотографий")
+		return errors.New(texts.T("internal.collection.places.013"))
 	}
 	for _, id := range p.Photos {
 		if id == "" || strings.ContainsAny(id, "/:\n\r ") {
-			return errors.New("фото должно быть Telegram file_id")
+			return errors.New(texts.T("internal.collection.places.014"))
 		}
 	}
 	for _, src := range p.Sources {
 		if !ValidURL(src.URL) || src.RetrievedAt <= 0 {
-			return errors.New("источник требует ссылки и даты получения")
+			return errors.New(texts.T("internal.collection.places.015"))
 		}
 	}
 	return nil
 }
-
 func scope(ctx context.Context, q store.Query, actor int64) (pair int64, personal any, key string, err error) {
 	if _, err = store.UserFor(ctx, q, actor, false); err != nil {
 		return
@@ -129,7 +130,6 @@ func scope(ctx context.Context, q store.Query, actor int64) (pair int64, persona
 	}
 	return
 }
-
 func duplicate(ctx context.Context, q store.Query, actor, pair int64, p Input) (int64, error) {
 	rows, err := q.QueryContext(ctx, "SELECT id,title,coalesce(address,''),coalesce(map_url,'') FROM places WHERE archived=0 AND (personal_user_id=? OR pair_id=?)", actor, pair)
 	if err != nil {
@@ -205,7 +205,6 @@ func (s *Service) Match(ctx context.Context, q store.Query, actor int64, p Input
 	c, err := s.Get(ctx, q, actor, matched)
 	return &c, err
 }
-
 func (s *Service) Create(ctx context.Context, q store.Query, actor int64, p Input) (int64, error) {
 	if err := Validate(p); err != nil {
 		return 0, err
@@ -262,7 +261,6 @@ func categories(ctx context.Context, q store.Query, id int64, key string, names 
 	}
 	return nil
 }
-
 func (s *Service) Get(ctx context.Context, q store.Query, actor, id int64) (Card, error) {
 	var c Card
 	if err := store.PlaceFor(ctx, q, actor, id); err != nil {
@@ -271,7 +269,7 @@ func (s *Service) Get(ctx context.Context, q store.Query, actor, id int64) (Card
 	var author sql.NullInt64
 	var price sql.NullFloat64
 	var sources, photos string
-	err := q.QueryRowContext(ctx, `SELECT p.id,p.author_id,coalesce(u.notification_name,'Удалённый пользователь'),p.title,coalesce(p.address,''),coalesce(p.city,''),coalesce(p.map_url,''),p.description,p.price,coalesce(p.price_basis,''),p.sources,p.photos,p.version,p.archived FROM places p LEFT JOIN users u ON u.id=p.author_id WHERE p.id=?`, id).Scan(&c.ID, &author, &c.Author, &c.Title, &c.Address, &c.City, &c.MapURL, &c.Description, &price, &c.PriceBasis, &sources, &photos, &c.Version, &c.Archived)
+	err := q.QueryRowContext(ctx, "SELECT p.id,p.author_id,coalesce(u.notification_name,'Удалённый пользователь'),p.title,coalesce(p.address,''),coalesce(p.city,''),coalesce(p.map_url,''),p.description,p.price,coalesce(p.price_basis,''),p.sources,p.photos,p.version,p.archived FROM places p LEFT JOIN users u ON u.id=p.author_id WHERE p.id=?", id).Scan(&c.ID, &author, &c.Author, &c.Title, &c.Address, &c.City, &c.MapURL, &c.Description, &price, &c.PriceBasis, &sources, &photos, &c.Version, &c.Archived)
 	if err != nil {
 		return c, err
 	}
@@ -310,7 +308,6 @@ func (s *Service) Get(ctx context.Context, q store.Query, actor, id int64) (Card
 	c.FreezeUntil, err = s.freeze(ctx, q, id)
 	return c, err
 }
-
 func (s *Service) freeze(ctx context.Context, q store.Query, id int64) (float64, error) {
 	var latest, created sql.NullFloat64
 	err := q.QueryRowContext(ctx, `SELECT v.visited_at,v.created_at FROM visits v JOIN visit_items vi ON vi.visit_id=v.id WHERE vi.place_id=? AND v.valid=1 AND v.automatic_freeze=1 AND v.visited_at IS NOT NULL ORDER BY v.visited_at DESC,v.id DESC LIMIT 1`, id).Scan(&latest, &created)
@@ -399,7 +396,7 @@ type Interest struct {
 
 func (s *Service) Interest(ctx context.Context, q store.Query, actor int64, p Interest) error {
 	if p.Interest != "want" && p.Interest != "uninterested" && p.Interest != "" {
-		return errors.New("неизвестная оценка")
+		return errors.New(texts.T("internal.collection.places.017"))
 	}
 	if err := store.PlaceFor(ctx, q, actor, p.ID); err != nil {
 		return err
@@ -407,7 +404,6 @@ func (s *Service) Interest(ctx context.Context, q store.Query, actor int64, p In
 	_, err := q.ExecContext(ctx, `INSERT INTO place_preferences(place_id,user_id,interest) VALUES(?,?,?) ON CONFLICT(place_id,user_id) DO UPDATE SET interest=excluded.interest`, p.ID, actor, nullString(p.Interest))
 	return err
 }
-
 func (s *Service) List(ctx context.Context, actor int64, filter string) ([]Card, error) {
 	pair, _, _, err := scope(ctx, s.Store.DB, actor)
 	if err != nil {
@@ -457,7 +453,7 @@ func (s *Service) List(ctx context.Context, actor int64, filter string) ([]Card,
 		case "archive":
 			take = c.Archived
 		default:
-			return nil, errors.New("неизвестный фильтр")
+			return nil, errors.New(texts.T("internal.collection.places.018"))
 		}
 		if take {
 			cards = append(cards, c)
@@ -465,54 +461,52 @@ func (s *Service) List(ctx context.Context, actor int64, filter string) ([]Card,
 	}
 	return cards, nil
 }
-
 func Render(c Card) string {
-	text := c.Title + "\nКатегории: " + strings.Join(c.Categories, ", ") + "\nДобавил: " + c.Author
+	text := c.Title + texts.T("internal.collection.places.019") + strings.Join(c.Categories, ", ") + texts.T("internal.collection.places.020") + c.Author
 	if c.Address != "" {
-		text += "\nАдрес: " + c.Address
+		text += texts.T("internal.collection.places.021") + c.Address
 	}
 	if c.MapURL != "" {
-		text += "\nКарта: " + c.MapURL
+		text += texts.T("internal.collection.places.022") + c.MapURL
 	}
 	if description := visibleDescription(c.Description); description != "" {
 		text += "\n" + description
 	}
 	if c.Price != nil {
-		basis := "на человека"
+		basis := texts.T("internal.ai.search.040")
 		if c.PriceBasis == "couple" {
-			basis = "на двоих"
+			basis = texts.T("internal.ai.search.041")
 		}
-		text += "\nЦена: " + strconv.FormatFloat(*c.Price, 'f', -1, 64) + " ₽ " + basis
+		text += texts.T("internal.collection.places.023") + strconv.FormatFloat(*c.Price, 'f', -1, 64) + " ₽ " + basis
 	}
 	for _, src := range c.Sources {
-		text += "\nИсточник: " + src.URL + " (" + time.Unix(src.RetrievedAt, 0).UTC().Format("2006-01-02") + ")"
+		text += texts.T("internal.collection.places.024") + src.URL + " (" + time.Unix(src.RetrievedAt, 0).UTC().Format("2006-01-02") + ")"
 	}
 	if c.Refused {
-		text += "\nОдин из вас больше не хочет сюда. Ручной выбор доступен."
+		text += texts.T("internal.collection.places.025")
 	}
 	if c.FreezeUntil > 0 {
-		text += "\nФриз до " + time.Unix(int64(c.FreezeUntil), 0).UTC().Format("2006-01-02")
+		text += texts.T("internal.collection.places.026") + time.Unix(int64(c.FreezeUntil), 0).UTC().Format("2006-01-02")
 	}
 	switch c.Mine {
 	case "want":
-		text += "\nТвоя оценка: хочешь сходить ✅"
+		text += texts.T("internal.collection.places.027")
 	case "uninterested":
-		text += "\nТвоя оценка: не моё"
+		text += texts.T("internal.collection.places.028")
 	}
 	switch c.Theirs {
 	case "want":
-		text += "\nПартнёр тоже хочет сходить ❤️"
+		text += texts.T("internal.collection.places.029")
 	case "uninterested":
-		text += "\nПартнёру не интересно"
+		text += texts.T("internal.collection.places.030")
 	default:
-		text += "\nПартнёр пока не оценил"
+		text += texts.T("internal.collection.places.031")
 	}
 	if c.Archived {
-		text += "\nВ архиве"
+		text += texts.T("internal.collection.places.032")
 	}
 	return text
 }
-
 func visibleDescription(description string) string {
 	lines := []string{}
 	for _, line := range strings.Split(description, "\n") {

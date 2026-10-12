@@ -4,13 +4,14 @@ import (
 	"context"
 	"strings"
 
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 	"github.com/go-telegram/bot/models"
 )
 
 func telegramName(u models.User) string {
 	name := strings.TrimSpace(strings.TrimSpace(u.FirstName) + " " + strings.TrimSpace(u.LastName))
 	if name == "" {
-		return "Партнёр"
+		return texts.T("internal.telegram.telegram_name.001")
 	}
 	return name
 }

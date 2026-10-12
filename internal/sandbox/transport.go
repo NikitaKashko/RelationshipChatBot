@@ -12,6 +12,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strconv"
+
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 type transport struct {
@@ -47,12 +49,12 @@ func (t transport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return nil, errors.New("simulator recipient denied")
 		}
 		fields["chat_id"] = []string{strconv.FormatInt(t.owner, 10)}
-		label := "[ТЕСТ] "
+		label := texts.T("internal.sandbox.transport.001")
 		if role == 1 {
-			label = "[ТЕСТ · А] "
+			label = texts.T("internal.sandbox.transport.002")
 		}
 		if role == 2 {
-			label = "[ТЕСТ · Б] "
+			label = texts.T("internal.sandbox.transport.003")
 		}
 		for _, key := range []string{"text", "caption"} {
 			if v := fields[key]; len(v) > 0 {
@@ -102,7 +104,6 @@ func (t transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	out.Header.Set("Content-Type", w.FormDataContentType())
 	return t.next.RoundTrip(out)
 }
-
 func markKeyboard(raw string, role int64) (string, error) {
 	var markup map[string]any
 	if err := json.Unmarshal([]byte(raw), &markup); err != nil {
@@ -126,7 +127,7 @@ func markKeyboard(raw string, role int64) (string, error) {
 		}
 	}
 	if rows, ok := markup["keyboard"].([]any); ok {
-		markup["keyboard"] = append(rows, []any{map[string]any{"text": "🧪 Роль А"}, map[string]any{"text": "🧪 Роль Б"}})
+		markup["keyboard"] = append(rows, []any{map[string]any{"text": texts.T("internal.sandbox.run.005")}, map[string]any{"text": texts.T("internal.sandbox.run.006")}})
 	}
 	b, err := json.Marshal(markup)
 	return string(b), err

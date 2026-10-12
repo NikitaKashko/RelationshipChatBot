@@ -13,13 +13,18 @@ import (
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/collection"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 type Service struct{ Store *store.Store }
 type Stale struct{ ID int64 }
 
-func (e *Stale) Error() string { return store.ErrConflict.Error() }
-func (e *Stale) Unwrap() error { return store.ErrConflict }
+func (e *Stale) Error() string {
+	return store.ErrConflict.Error()
+}
+func (e *Stale) Unwrap() error {
+	return store.ErrConflict
+}
 
 type Input struct {
 	Draft       bool    `json:"draft,omitempty"`
@@ -58,24 +63,23 @@ func parse(raw string, loc *time.Location) (time.Time, error) {
 	const layout = "2006-01-02 15:04"
 	t, err := time.ParseInLocation(layout, raw, loc)
 	if err != nil || t.In(loc).Format(layout) != raw {
-		return time.Time{}, errors.New("укажи точную дату и время")
+		return time.Time{}, errors.New(texts.T("internal.planning.plans.001"))
 	}
 	// Reject ambiguous wall clocks during a timezone fall-back. Offset-bearing
 	// RFC3339 remains available to choose the intended actual instant explicitly.
 	for _, d := range []time.Duration{-2 * time.Hour, -time.Hour, -30 * time.Minute, 30 * time.Minute, time.Hour, 2 * time.Hour} {
 		if t.Add(d).In(loc).Format(layout) == raw {
-			return time.Time{}, errors.New("время неоднозначно: укажи UTC-смещение")
+			return time.Time{}, errors.New(texts.T("internal.planning.plans.002"))
 		}
 	}
 	return t, nil
 }
-
 func Dates(p Input) (time.Time, time.Time, error) {
 	if p.Draft && p.Date == "" && p.Start == "" {
 		return time.Unix(0, 0), time.Unix(1, 0), nil
 	}
 	if p.Timezone == "" || p.Timezone == "Local" {
-		return time.Time{}, time.Time{}, errors.New("укажи часовой пояс")
+		return time.Time{}, time.Time{}, errors.New(texts.T("internal.planning.plans.003"))
 	}
 	loc, err := time.LoadLocation(p.Timezone)
 	if err != nil {
@@ -84,7 +88,7 @@ func Dates(p Input) (time.Time, time.Time, error) {
 	if p.Start == "" && p.Date != "" {
 		day, e := time.ParseInLocation("2006-01-02", p.Date, loc)
 		if e != nil || day.Format("2006-01-02") != p.Date {
-			return time.Time{}, time.Time{}, errors.New("укажи дату YYYY-MM-DD")
+			return time.Time{}, time.Time{}, errors.New(texts.T("internal.planning.plans.004"))
 		}
 		return day.Add(10 * time.Hour), day.Add(23*time.Hour + 59*time.Minute), nil
 	}
@@ -105,16 +109,16 @@ func Dates(p Input) (time.Time, time.Time, error) {
 		return start, end, err
 	}
 	if !end.After(start) {
-		return start, end, errors.New("окончание должно быть после начала")
+		return start, end, errors.New(texts.T("internal.planning.plans.005"))
 	}
 	return start, end, nil
 }
 func Validate(p Input) error {
 	if strings.TrimSpace(p.Title) == "" || len([]rune(p.Title)) > 200 || len([]rune(p.Description)) > 3000 {
-		return errors.New("свиданию нужно название; описание до 3000 символов")
+		return errors.New(texts.T("internal.planning.plans.006"))
 	}
 	if p.ID != 0 && p.Version < 1 {
-		return errors.New("для изменения нужна версия плана")
+		return errors.New(texts.T("internal.planning.plans.007"))
 	}
 	_, _, err := Dates(p)
 	return err
@@ -145,7 +149,6 @@ func (s *Service) Candidate(ctx context.Context, q store.Query, actor int64, p C
 	_, err = q.ExecContext(ctx, `INSERT OR IGNORE INTO candidates(pair_id,place_id,added_by,position) SELECT ?,?,?,coalesce(max(position)+1,0) FROM candidates WHERE pair_id=?`, pair, p.ID, actor, pair)
 	return err
 }
-
 func (s *Service) Get(ctx context.Context, q store.Query, actor, id int64) (Plan, error) {
 	var p Plan
 	if err := store.PlanFor(ctx, q, actor, id); err != nil {
@@ -195,16 +198,16 @@ func (s *Service) Preview(ctx context.Context, q store.Query, actor int64, p Inp
 	if loc == nil {
 		loc = time.UTC
 	}
-	text := p.Title + "\nНачало: " + start.In(loc).Format("02.01.2006 15:04") + "\nОкончание: " + end.In(loc).Format("02.01.2006 15:04") + "\n" + p.Timezone
+	text := p.Title + texts.T("internal.planning.plans.008") + start.In(loc).Format("02.01.2006 15:04") + texts.T("internal.planning.plans.009") + end.In(loc).Format("02.01.2006 15:04") + "\n" + p.Timezone
 	if p.Draft {
-		text = "📝 Черновик свидания: " + p.Title
+		text = texts.T("internal.planning.plans.010") + p.Title
 		if start.Unix() != 0 {
-			text += "\nПредварительная дата: " + start.In(loc).Format("02.01.2006")
+			text += texts.T("internal.planning.plans.011") + start.In(loc).Format("02.01.2006")
 		}
 	} else if p.Start == "" {
-		text = p.Title + "\nДата: " + p.Date + "\nВремя не задано"
+		text = p.Title + texts.T("internal.planning.plans.012") + p.Date + texts.T("internal.planning.plans.013")
 	} else if p.End == "" {
-		text = p.Title + "\nНачало: " + start.In(loc).Format("02.01.2006 15:04") + "\nОкончание не задано"
+		text = p.Title + texts.T("internal.planning.plans.008") + start.In(loc).Format("02.01.2006 15:04") + texts.T("internal.planning.plans.014")
 	}
 	if p.Description != "" {
 		text += "\n" + p.Description
@@ -220,10 +223,10 @@ func (s *Service) Preview(ctx context.Context, q store.Query, actor int64, p Inp
 		}
 		text += fmt.Sprintf("\n%d. %s", i+1, card.Title)
 		if card.Refused {
-			text += " — есть личный отказ; ручной выбор доступен"
+			text += texts.T("internal.planning.plans.015")
 		}
 		if card.FreezeUntil > float64(s.Store.Now().Unix()) {
-			text += " — во фризе; ручной выбор доступен"
+			text += texts.T("internal.planning.plans.016")
 		}
 	}
 	return text, nil
@@ -249,9 +252,9 @@ func (s *Service) Save(ctx context.Context, q store.Query, actor int64, p Input)
 		return 0, err
 	}
 	if !pairTimezone.Valid && !p.Draft {
-		return 0, errors.New("сначала подтвердите часовой пояс пары")
+		return 0, errors.New(texts.T("internal.planning.plans.017"))
 	}
-	changed := []string{"создан план"}
+	changed := []string{texts.T("internal.planning.plans.018")}
 	version := int64(1)
 	id := p.ID
 	if id != 0 {
@@ -265,16 +268,16 @@ func (s *Service) Save(ctx context.Context, q store.Query, actor int64, p Input)
 		version = old.Version + 1
 		changed = nil
 		if old.Title != p.Title {
-			changed = append(changed, "название")
+			changed = append(changed, texts.T("internal.planning.plans.019"))
 		}
 		if !old.Start.Equal(start) {
-			changed = append(changed, "начало")
+			changed = append(changed, texts.T("internal.planning.plans.020"))
 		}
 		if !old.End.Equal(end) {
-			changed = append(changed, "окончание")
+			changed = append(changed, texts.T("internal.planning.plans.021"))
 		}
 		if old.Timezone != p.Timezone {
-			changed = append(changed, "часовой пояс отображения")
+			changed = append(changed, texts.T("internal.planning.plans.022"))
 		}
 		same := len(old.Items) == len(p.Places)
 		if same {
@@ -286,10 +289,10 @@ func (s *Service) Save(ctx context.Context, q store.Query, actor int64, p Input)
 			}
 		}
 		if !same {
-			changed = append(changed, "места и порядок")
+			changed = append(changed, texts.T("internal.planning.plans.023"))
 		}
 		if len(changed) == 0 {
-			changed = append(changed, "сведения карточек")
+			changed = append(changed, texts.T("internal.planning.plans.024"))
 		}
 		if _, err = q.ExecContext(ctx, "UPDATE plans SET title=?,start_at=?,end_at=?,timezone=?,version=? WHERE id=? AND version=?", p.Title, start.Unix(), end.Unix(), p.Timezone, version, id, p.Version); err != nil {
 			return 0, err

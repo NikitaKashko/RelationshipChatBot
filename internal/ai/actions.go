@@ -11,6 +11,7 @@ import (
 	"github.com/NikitaKashko/RelationshipChatBot/internal/feedback"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/planning"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 func (s *Service) readContext(ctx context.Context, actor int64) (any, error) {
@@ -193,7 +194,6 @@ func (s *Service) readContext(ctx context.Context, actor int64) (any, error) {
 	result["preferences"] = prefs
 	return result, nil
 }
-
 func (s *Service) preview(ctx context.Context, actor int64, kind string, raw json.RawMessage) (string, error) {
 	if _, err := store.AIConversationFor(ctx, s.Store.DB, actor); err != nil {
 		return "", err
@@ -213,7 +213,7 @@ func (s *Service) preview(ctx context.Context, actor int64, kind string, raw jso
 		if len(p.Photos) > 0 || len(p.Sources) > 0 {
 			return "", store.ErrDenied
 		}
-		return "Добавить идею?\n" + collection.Render(collection.Card{Input: p}), nil
+		return texts.T("internal.ai.actions.001") + collection.Render(collection.Card{Input: p}), nil
 	case "place_edit":
 		var p collection.Edit
 		if err := rawDecode(raw, &p); err != nil {
@@ -229,7 +229,7 @@ func (s *Service) preview(ctx context.Context, actor int64, kind string, raw jso
 		if err = collection.Validate(p.Card); err != nil {
 			return "", err
 		}
-		return "Изменить карточку?\n" + collection.Render(collection.Card{Input: p.Card}), nil
+		return texts.T("internal.ai.actions.002") + collection.Render(collection.Card{Input: p.Card}), nil
 	case "place_archive":
 		var p collection.Archive
 		if err := rawDecode(raw, &p); err != nil {
@@ -242,7 +242,7 @@ func (s *Service) preview(ctx context.Context, actor int64, kind string, raw jso
 		if c.Version != p.Version {
 			return "", store.ErrConflict
 		}
-		return fmt.Sprintf("Изменить архив «%s»: %t?", c.Title, p.Archived), nil
+		return fmt.Sprintf(texts.T("internal.ai.actions.003"), c.Title, p.Archived), nil
 	case "candidate":
 		var p planning.Candidate
 		if err := rawDecode(raw, &p); err != nil {
@@ -252,7 +252,7 @@ func (s *Service) preview(ctx context.Context, actor int64, kind string, raw jso
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("Изменить кандидатов: «%s», убрать: %t?", c.Title, p.Remove), nil
+		return fmt.Sprintf(texts.T("internal.ai.actions.004"), c.Title, p.Remove), nil
 	case "plan_save":
 		var p planning.Input
 		if err := rawDecode(raw, &p); err != nil {
@@ -293,7 +293,7 @@ func (s *Service) preview(ctx context.Context, actor int64, kind string, raw jso
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("Только твой отзыв о «%s»:\nОценка: %s\nВернуться: %s\n%s\nСохранить? Фриз сам не меняется.", c.Title, p.Rating, p.Again, p.Comment), nil
+		return fmt.Sprintf(texts.T("internal.ai.actions.005"), c.Title, p.Rating, p.Again, p.Comment), nil
 	case "visit_record":
 		var p feedback.Visit
 		if err := rawDecode(raw, &p); err != nil {
@@ -304,7 +304,7 @@ func (s *Service) preview(ctx context.Context, actor int64, kind string, raw jso
 				return "", err
 			}
 		}
-		return fmt.Sprintf("Записать посещение: %s (%s), места %v, фриз: %t?", p.Date, p.Precision, p.Places, p.Freeze || p.Plan != 0), nil
+		return fmt.Sprintf(texts.T("internal.ai.actions.006"), p.Date, p.Precision, p.Places, p.Freeze || p.Plan != 0), nil
 	case "freeze":
 		var p feedback.Freeze
 		if err := rawDecode(raw, &p); err != nil {
@@ -315,16 +315,16 @@ func (s *Service) preview(ctx context.Context, actor int64, kind string, raw jso
 			return "", err
 		}
 		if p.Until == "" {
-			return "Снять общий фриз «" + c.Title + "»? Личные отказы остаются.", nil
+			return texts.T("internal.ai.actions.007") + c.Title + texts.T("internal.ai.actions.008"), nil
 		}
-		return "Установить фриз «" + c.Title + "» до " + p.Until + "?", nil
+		return texts.T("internal.ai.actions.009") + c.Title + texts.T("internal.ai.actions.010") + p.Until + "?", nil
 	case "preferences":
 		var p store.Preferences
 		if err := rawDecode(raw, &p); err != nil {
 			return "", err
 		}
 		pretty, _ := json.MarshalIndent(p, "", "  ")
-		return "Сохранить только твои постоянные предпочтения?\n" + string(pretty), nil
+		return texts.T("internal.ai.actions.011") + string(pretty), nil
 	default:
 		return "", store.ErrDenied
 	}

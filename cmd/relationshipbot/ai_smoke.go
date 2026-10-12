@@ -12,6 +12,7 @@ import (
 	"github.com/NikitaKashko/RelationshipChatBot/internal/ai"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/config"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 // Synthetic integration check: temporary database, no actual Telegram users or
@@ -31,19 +32,15 @@ func checkAIFlow(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("smoke database failed")
 	}
 	defer db.DB.Close()
-	db.Now = func() time.Time { return time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC) }
-	_, err = db.DB.ExecContext(ctx, `INSERT INTO users(id,name,code,status,city,timezone,created_at) VALUES(1,'Synthetic A','SMOKE-A','ready','Москва','Europe/Moscow',1),(2,'Synthetic B','SMOKE-B','ready','Москва','Europe/Moscow',1);
- INSERT INTO pairs(id,city,timezone,created_at) VALUES(1,'Москва','Europe/Moscow',1);
- INSERT INTO pair_members(pair_id,user_id) VALUES(1,1),(1,2);
- INSERT INTO consents(user_id,kind,enabled,updated_at) VALUES(1,'ai',1,1),(2,'ai',1,1);
- INSERT INTO places(id,author_id,pair_id,title,price,price_basis,created_at) VALUES(1,1,1,'Прогулка в парке (тестовая идея)',800,'couple',1);
- INSERT INTO categories(id,scope,title) VALUES(1,'pair:1','Погулять');
- INSERT INTO place_categories(place_id,category_id) VALUES(1,1);`)
+	db.Now = func() time.Time {
+		return time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	}
+	_, err = db.DB.ExecContext(ctx, "INSERT INTO users(id,name,code,status,city,timezone,created_at) VALUES(1,'Synthetic A','SMOKE-A','ready','Москва','Europe/Moscow',1),(2,'Synthetic B','SMOKE-B','ready','Москва','Europe/Moscow',1);\n INSERT INTO pairs(id,city,timezone,created_at) VALUES(1,'Москва','Europe/Moscow',1);\n INSERT INTO pair_members(pair_id,user_id) VALUES(1,1),(1,2);\n INSERT INTO consents(user_id,kind,enabled,updated_at) VALUES(1,'ai',1,1),(2,'ai',1,1);\n INSERT INTO places(id,author_id,pair_id,title,price,price_basis,created_at) VALUES(1,1,1,'Прогулка в парке (тестовая идея)',800,'couple',1);\n INSERT INTO categories(id,scope,title) VALUES(1,'pair:1','Погулять');\n INSERT INTO place_categories(place_id,category_id) VALUES(1,1);")
 	if err != nil {
 		return fmt.Errorf("smoke fixture failed")
 	}
 	s := ai.Service{Store: db, Model: cfg.DeepSeekModel, Provider: &ai.DeepSeek{Key: cfg.DeepSeekKey, Model: cfg.DeepSeekModel}}
-	result, err := s.Converse(ctx, 1, "Подготовь свидание завтра с 18:00 до 20:00 в Москве, до 1000 рублей на двоих. Выбери из нашей коллекции единственное подходящее место. Дополнительных мест не нужно. Только подготовь черновик плана.")
+	result, err := s.Converse(ctx, 1, texts.T("cmd.relationshipbot.ai_smoke.002"))
 	if err != nil || result.Retry != "" {
 		return fmt.Errorf("AI flow failed")
 	}

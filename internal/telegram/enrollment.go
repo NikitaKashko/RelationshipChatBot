@@ -12,22 +12,16 @@ import (
 	"github.com/NikitaKashko/RelationshipChatBot/internal/actions"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 type Enrollment struct{ Store *store.Store }
 
-var ErrAnswer = errors.New("Ответ должен содержать от 1 до 100 символов.")
-var ErrTimezone = errors.New("Не распознал часовой пояс. Для Москвы и Санкт-Петербурга напиши «Москва» или нажми «Московское время» после /start. Для другого региона можно указать, например, Asia/Yekaterinburg.")
+var ErrAnswer = errors.New(texts.T("internal.telegram.enrollment.001"))
+var ErrTimezone = errors.New(texts.T("internal.telegram.enrollment.002"))
 
 func normalizeTimezone(text string) (string, error) {
-	aliases := map[string]string{
-		"москва": "Europe/Moscow", "moscow": "Europe/Moscow", "moskow": "Europe/Moscow",
-		"europe/moscow": "Europe/Moscow", "europe/moskow": "Europe/Moscow",
-		"московское время": "Europe/Moscow", "санкт-петербург": "Europe/Moscow", "спб": "Europe/Moscow",
-		"калининград": "Europe/Kaliningrad", "екатеринбург": "Asia/Yekaterinburg",
-		"новосибирск": "Asia/Novosibirsk", "владивосток": "Asia/Vladivostok",
-		"utc": "UTC",
-	}
+	aliases := map[string]string{texts.T("internal.telegram.enrollment.003"): "Europe/Moscow", "moscow": "Europe/Moscow", "moskow": "Europe/Moscow", "europe/moscow": "Europe/Moscow", "europe/moskow": "Europe/Moscow", texts.T("internal.telegram.enrollment.004"): "Europe/Moscow", texts.T("internal.telegram.enrollment.005"): "Europe/Moscow", texts.T("internal.telegram.enrollment.006"): "Europe/Moscow", texts.T("internal.telegram.enrollment.007"): "Europe/Kaliningrad", texts.T("internal.telegram.enrollment.008"): "Asia/Yekaterinburg", texts.T("internal.telegram.enrollment.009"): "Asia/Novosibirsk", texts.T("internal.telegram.enrollment.010"): "Asia/Vladivostok", "utc": "UTC"}
 	text = strings.TrimSpace(text)
 	if zone, ok := aliases[strings.ToLower(text)]; ok {
 		text = zone
@@ -76,7 +70,6 @@ func (e *Enrollment) Begin(ctx context.Context, actor int64) (Wizard, error) {
 	})
 	return w, err
 }
-
 func (e *Enrollment) save(ctx context.Context, q store.Query, actor int64, w Wizard) error {
 	if _, err := q.ExecContext(ctx, "DELETE FROM drafts WHERE user_id=? AND kind='onboarding'", actor); err != nil {
 		return err
@@ -92,7 +85,6 @@ func (e *Enrollment) save(ctx context.Context, q store.Query, actor int64, w Wiz
 	_, err = q.ExecContext(ctx, "INSERT INTO drafts(id,user_id,kind,payload,created_at,expires_at) VALUES(?,?,'onboarding',?,?,?)", id, actor, string(payload), e.Store.Now().Unix(), e.Store.Now().Unix()+7*86400)
 	return err
 }
-
 func (e *Enrollment) Input(ctx context.Context, actor int64, text string) (Wizard, error) {
 	var w Wizard
 	text = strings.TrimSpace(text)
@@ -119,9 +111,7 @@ func (e *Enrollment) Input(ctx context.Context, actor int64, text string) (Wizar
 			w.Profile.City = text
 			w.Stage = "timezone"
 		case "name":
-			if text != "/skip" {
-				// Sender cannot select an attention signature.
-			}
+			// Sender cannot select an attention signature.
 			w.Stage = "timezone"
 		case "timezone":
 			zone, err := normalizeTimezone(text)
@@ -137,7 +127,6 @@ func (e *Enrollment) Input(ctx context.Context, actor int64, text string) (Wizar
 	})
 	return w, err
 }
-
 func (e *Enrollment) ProfileDraft(ctx context.Context, actor int64, w Wizard) (string, error) {
 	if w.Stage != "preview" {
 		return "", store.ErrConflict
@@ -149,7 +138,6 @@ func (e *Enrollment) ProfileDraft(ctx context.Context, actor int64, w Wizard) (s
 	a := actions.Service{Store: e.Store}
 	return a.Prepare(ctx, actor, "profile", raw)
 }
-
 func (e *Enrollment) PendingPartner(ctx context.Context, actor int64) (hash, name string, err error) {
 	err = e.Store.DB.QueryRowContext(ctx, `SELECT i.token_hash,u.notification_name FROM invitations i JOIN users u ON u.id=i.sender_id WHERE i.kind='partner' AND i.claimed_by=? AND i.revoked_at IS NULL AND i.consumed_at IS NULL AND i.expires_at>? AND u.status='ready' AND NOT EXISTS(SELECT 1 FROM pair_members m WHERE m.user_id=u.id AND m.active=1) ORDER BY i.created_at DESC LIMIT 1`, actor, e.Store.Now().Unix()).Scan(&hash, &name)
 	if errors.Is(err, sql.ErrNoRows) {

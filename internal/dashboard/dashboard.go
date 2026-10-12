@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
-	_ "embed"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -19,11 +18,31 @@ import (
 	"github.com/NikitaKashko/RelationshipChatBot/internal/backup"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/identity"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
-//go:embed page.html
-var page string
-var view = template.Must(template.New("panel").Parse(page))
+var view = mustLoadView()
+
+func mustLoadView() *template.Template {
+	path := filepath.Join(filepath.Dir(texts.Path()), "panel.html")
+	parsed, err := readView(path)
+	if err != nil {
+		panic(err)
+	}
+	return parsed
+}
+
+func readView(path string) (*template.Template, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read panel template %q: %w", path, err)
+	}
+	parsed, err := template.New("panel").Parse(string(raw))
+	if err != nil {
+		return nil, fmt.Errorf("parse panel template %q: %w", path, err)
+	}
+	return parsed, nil
+}
 
 type session struct {
 	csrf  string
@@ -54,14 +73,16 @@ type Page struct {
 	Invites                                              []Invite
 }
 
-func (p *Panel) Handler() http.Handler { return http.HandlerFunc(p.handle) }
+func (p *Panel) Handler() http.Handler {
+	return http.HandlerFunc(p.handle)
+}
 func (p *Panel) handle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 	if r.Host != "127.0.0.1:8080" && r.Host != "localhost:8080" {
-		http.Error(w, "Invalid host", 403)
+		http.Error(w, texts.T("dashboard.http.invalid_host"), 403)
 		return
 	}
 	if r.Method != "GET" && r.Method != "POST" {
@@ -70,12 +91,12 @@ func (p *Panel) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == "POST" {
 		if r.Header.Get("Origin") != "http://"+r.Host {
-			http.Error(w, "Invalid origin", 403)
+			http.Error(w, texts.T("dashboard.http.invalid_origin"), 403)
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 4096)
 		if err := r.ParseForm(); err != nil {
-			http.Error(w, "Invalid form", 400)
+			http.Error(w, texts.T("dashboard.http.invalid_form"), 400)
 			return
 		}
 	}
@@ -86,24 +107,24 @@ func (p *Panel) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		if time.Now().Before(p.failures["login"]) {
 			p.mu.Unlock()
-			http.Error(w, "Retry shortly", 429)
+			http.Error(w, texts.T("dashboard.http.retry_shortly"), 429)
 			return
 		}
 		p.failures["login"] = time.Now().Add(time.Second)
 		p.mu.Unlock()
 		got, want := sha256.Sum256([]byte(r.Form.Get("password"))), sha256.Sum256([]byte(p.Password))
 		if len(p.Password) < 24 || subtle.ConstantTimeCompare(got[:], want[:]) != 1 {
-			http.Error(w, "Неверный пароль", 403)
+			http.Error(w, texts.T("internal.dashboard.dashboard.001"), 403)
 			return
 		}
 		token, e := identity.RandomToken()
 		if e != nil {
-			http.Error(w, "Unavailable", 503)
+			http.Error(w, texts.T("dashboard.http.unavailable"), 503)
 			return
 		}
 		csrf, e := identity.RandomToken()
 		if e != nil {
-			http.Error(w, "Unavailable", 503)
+			http.Error(w, texts.T("dashboard.http.unavailable"), 503)
 			return
 		}
 		p.mu.Lock()
@@ -130,7 +151,7 @@ func (p *Panel) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.csrf == "" || time.Now().After(s.until) {
 		if r.Method == "POST" {
-			http.Error(w, "Login required", 401)
+			http.Error(w, texts.T("dashboard.http.login_required"), 401)
 			return
 		}
 		p.render(w, Page{Login: true})
@@ -139,14 +160,14 @@ func (p *Panel) handle(w http.ResponseWriter, r *http.Request) {
 	data := Page{CSRF: s.csrf}
 	if r.Method == "POST" {
 		if subtle.ConstantTimeCompare([]byte(r.Form.Get("csrf")), []byte(s.csrf)) != 1 {
-			http.Error(w, "Invalid CSRF", 403)
+			http.Error(w, texts.T("dashboard.http.invalid_csrf"), 403)
 			return
 		}
 		switch r.URL.Path {
 		case "/invite", "/revoke":
 			var actor int64
 			if err = p.Store.DB.QueryRowContext(r.Context(), "SELECT id FROM users WHERE role='owner' AND status='ready'").Scan(&actor); err != nil {
-				data.Message = "Сначала заверши регистрацию владельца в Telegram."
+				data.Message = texts.T("internal.dashboard.dashboard.002")
 				break
 			}
 			ids := identity.Service{Store: p.Store}
@@ -155,18 +176,18 @@ func (p *Panel) handle(w http.ResponseWriter, r *http.Request) {
 				token, err = ids.Issue(r.Context(), actor, "access")
 				if err == nil {
 					data.Link = "https://t.me/" + p.Username + "?start=" + token
-					data.Message = "Одноразовое приглашение доступа на 7 дней. Скопируй ссылку: повторно она не показывается."
+					data.Message = texts.T("internal.dashboard.dashboard.003")
 				}
 			} else {
 				err = ids.RevokeHash(r.Context(), actor, r.Form.Get("hash"))
 				if err == nil {
-					data.Message = "Приглашение отменено."
+					data.Message = texts.T("internal.dashboard.dashboard.004")
 				}
 			}
 		case "/backup":
 			_, err = p.Backup.Run(r.Context())
 			if err == nil {
-				data.Message = "Резервная копия создана и проверена."
+				data.Message = texts.T("internal.dashboard.dashboard.005")
 			}
 		case "/logout":
 			p.mu.Lock()
@@ -180,14 +201,14 @@ func (p *Panel) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err != nil {
-			data.Message = "Действие не удалось. Предыдущие копии сохранены. Проверь состояние ниже."
+			data.Message = texts.T("internal.dashboard.dashboard.006")
 		}
 	} else if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
 	}
 	if err = p.aggregate(r.Context(), &data); err != nil {
-		http.Error(w, "Metrics unavailable", 503)
+		http.Error(w, texts.T("dashboard.http.metrics_unavailable"), 503)
 		return
 	}
 	p.render(w, data)
@@ -197,13 +218,11 @@ func (p *Panel) render(w http.ResponseWriter, data Page) {
 	_ = view.Execute(w, data)
 }
 func (p *Panel) aggregate(ctx context.Context, d *Page) error {
-	d.Health = "Нет свежего сигнала процесса бота"
+	d.Health = texts.T("internal.dashboard.dashboard.007")
 	if info, e := os.Stat(p.HealthPath); e == nil && time.Since(info.ModTime()) < 40*time.Second {
-		d.Health = "Процесс бота работает · сигнал менее 40 секунд назад"
+		d.Health = texts.T("internal.dashboard.dashboard.008")
 	}
-	metrics := []struct{ label, query string }{
-		{"Пользователи", "SELECT count(*) FROM users WHERE status<>'deleted'"}, {"Пары", "SELECT count(*) FROM pairs WHERE status='active'"}, {"Идеи", "SELECT count(*) FROM places WHERE archived=0"}, {"Свидания", "SELECT count(*) FROM plans WHERE is_draft=0"}, {"Черновики", "SELECT count(*) FROM plans WHERE is_draft=1"}, {"В очереди", "SELECT count(*) FROM notifications WHERE status IN ('pending','sending')"}, {"Ошибки доставки", "SELECT count(*) FROM notifications WHERE status IN ('failed','uncertain')"}, {"Неполный usage", "SELECT count(*) FROM api_usage WHERE uncertain=1"},
-	}
+	metrics := []struct{ label, query string }{{texts.T("internal.dashboard.dashboard.009"), "SELECT count(*) FROM users WHERE status<>'deleted'"}, {texts.T("internal.dashboard.dashboard.010"), "SELECT count(*) FROM pairs WHERE status='active'"}, {texts.T("internal.dashboard.dashboard.011"), "SELECT count(*) FROM places WHERE archived=0"}, {texts.T("internal.dashboard.dashboard.012"), "SELECT count(*) FROM plans WHERE is_draft=0"}, {texts.T("internal.dashboard.dashboard.013"), "SELECT count(*) FROM plans WHERE is_draft=1"}, {texts.T("internal.dashboard.dashboard.014"), "SELECT count(*) FROM notifications WHERE status IN ('pending','sending')"}, {texts.T("internal.dashboard.dashboard.015"), "SELECT count(*) FROM notifications WHERE status IN ('failed','uncertain')"}, {texts.T("internal.dashboard.dashboard.016"), "SELECT count(*) FROM api_usage WHERE uncertain=1"}}
 	for _, m := range metrics {
 		v := 0
 		if err := p.Store.DB.QueryRowContext(ctx, m.query).Scan(&v); err != nil {
@@ -235,8 +254,8 @@ func (p *Panel) aggregate(ctx context.Context, d *Page) error {
 	for i := range d.Days {
 		d.Days[i].Height = 12 + d.Days[i].Calls*88/max
 	}
-	d.LastBackup = "Пока нет"
-	d.LastSuccess = "Пока нет"
+	d.LastBackup = texts.T("internal.dashboard.dashboard.017")
+	d.LastSuccess = texts.T("internal.dashboard.dashboard.017")
 	var status string
 	var finished sql.NullFloat64
 	e = p.Store.DB.QueryRowContext(ctx, "SELECT status,finished_at FROM backup_runs ORDER BY id DESC LIMIT 1").Scan(&status, &finished)
@@ -269,15 +288,14 @@ func (p *Panel) aggregate(ctx context.Context, d *Page) error {
 			return e
 		}
 		i.Expires = time.Unix(int64(expiry), 0).UTC().Format("02.01 15:04 UTC")
-		i.Status = "Не использовано"
+		i.Status = texts.T("internal.dashboard.dashboard.018")
 		if claimed {
-			i.Status = "Регистрация начата"
+			i.Status = texts.T("internal.dashboard.dashboard.019")
 		}
 		d.Invites = append(d.Invites, i)
 	}
 	return rows.Err()
 }
-
 func Heartbeat(ctx context.Context, path string) error {
 	if e := os.MkdirAll(filepath.Dir(path), 0770); e != nil {
 		return e

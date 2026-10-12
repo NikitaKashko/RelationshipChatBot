@@ -18,6 +18,7 @@ import (
 	"github.com/NikitaKashko/RelationshipChatBot/internal/notifications"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
 	"github.com/NikitaKashko/RelationshipChatBot/internal/telegram"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -76,11 +77,11 @@ func seed(ctx context.Context, db *store.Store, owner int64) error {
 	if err != nil {
 		return err
 	}
-	if _, err = ids.Claim(ctx, 1, "Участник А", token); err != nil {
+	if _, err = ids.Claim(ctx, 1, texts.T("internal.sandbox.run.001"), token); err != nil {
 		return err
 	}
 	if err = db.Write(ctx, func(q store.Query) error {
-		return ids.FinishProfile(ctx, q, 1, identity.Profile{City: "Санкт-Петербург", Timezone: "Europe/Moscow"})
+		return ids.FinishProfile(ctx, q, 1, identity.Profile{City: texts.T("internal.sandbox.run.002"), Timezone: "Europe/Moscow"})
 	}); err != nil {
 		return err
 	}
@@ -88,11 +89,11 @@ func seed(ctx context.Context, db *store.Store, owner int64) error {
 	if err != nil {
 		return err
 	}
-	if _, err = ids.Claim(ctx, 2, "Тестовый партнёр", token); err != nil {
+	if _, err = ids.Claim(ctx, 2, texts.T("internal.sandbox.run.003"), token); err != nil {
 		return err
 	}
 	if err = db.Write(ctx, func(q store.Query) error {
-		return ids.FinishProfile(ctx, q, 2, identity.Profile{City: "Санкт-Петербург", Timezone: "Europe/Moscow"})
+		return ids.FinishProfile(ctx, q, 2, identity.Profile{City: texts.T("internal.sandbox.run.002"), Timezone: "Europe/Moscow"})
 	}); err != nil {
 		return err
 	}
@@ -146,10 +147,10 @@ func (s *simulator) mapUpdate(u *models.Update) (int64, bool) {
 			return 0, false
 		}
 		switch m.Text {
-		case "/role_a", "🧪 Роль А":
+		case "/role_a", texts.T("internal.sandbox.run.005"):
 			role = 1
 			m.Text = "/start"
-		case "/role_b", "🧪 Роль Б":
+		case "/role_b", texts.T("internal.sandbox.run.006"):
 			role = 2
 			m.Text = "/start"
 		case "/start":
@@ -164,17 +165,15 @@ func (s *simulator) mapUpdate(u *models.Update) (int64, bool) {
 	s.role.Store(role)
 	return role, true
 }
-
 func virtual(role int64, u models.User) models.User {
 	u.ID = role
 	u.Username = ""
 	if role == 2 {
 		u.LastName = ""
-		u.FirstName = "Тестовый партнёр"
+		u.FirstName = texts.T("internal.sandbox.run.003")
 	}
 	return u
 }
-
 func Run(c config.Config) error {
 	if err := validate(c); err != nil {
 		return err
@@ -199,7 +198,8 @@ func Run(c config.Config) error {
 	s := &simulator{owner: c.TestOwnerID}
 	s.role.Store(1)
 	client := &http.Client{Timeout: 65 * time.Second, Transport: transport{owner: c.TestOwnerID, next: http.DefaultTransport}}
-	b, err := bot.New(c.TestBotToken, bot.WithSkipGetMe(), bot.WithWorkers(1), bot.WithHTTPClient(60*time.Second, client), bot.WithErrorsHandler(func(error) {}), bot.WithDefaultHandler(func(ctx context.Context, b *bot.Bot, u *models.Update) {
+	b, err := bot.New(c.TestBotToken, bot.WithSkipGetMe(), bot.WithWorkers(1), bot.WithHTTPClient(60*time.Second, client), bot.WithErrorsHandler(func(error) {
+	}), bot.WithDefaultHandler(func(ctx context.Context, b *bot.Bot, u *models.Update) {
 		if _, ok := s.mapUpdate(u); ok {
 			r.Handle(ctx, b, u)
 		}
@@ -223,7 +223,11 @@ func Run(c config.Config) error {
 		return err
 	}
 	done := make(chan error, 1)
-	go func() { err := worker.Run(ctx); done <- err; stop() }()
+	go func() {
+		err := worker.Run(ctx)
+		done <- err
+		stop()
+	}()
 	cleanupDone := make(chan struct{})
 	go func() {
 		defer close(cleanupDone)

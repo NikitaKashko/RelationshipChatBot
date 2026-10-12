@@ -17,6 +17,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/NikitaKashko/RelationshipChatBot/internal/store"
+	"github.com/NikitaKashko/RelationshipChatBot/internal/texts"
 )
 
 type Service struct{ Store *store.Store }
@@ -27,8 +28,8 @@ type Invitation struct {
 	Revoked, Consumed sql.NullFloat64
 }
 
-var ErrReferralUsed = errors.New("реферальное приглашение уже использовано")
-var ErrAccessInviteActive = errors.New("ссылка доступа уже выпущена")
+var ErrReferralUsed = errors.New(texts.T("internal.identity.service.001"))
+var ErrAccessInviteActive = errors.New(texts.T("internal.identity.service.002"))
 
 func RandomToken() (string, error) {
 	b := make([]byte, 24)
@@ -37,8 +38,10 @@ func RandomToken() (string, error) {
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
-func Hash(token string) string { h := sha256.Sum256([]byte(token)); return hex.EncodeToString(h[:]) }
-
+func Hash(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
+}
 func (s *Service) issue(ctx context.Context, q store.Query, sender any, kind string) (string, error) {
 	token, err := RandomToken()
 	if err != nil {
@@ -48,7 +51,6 @@ func (s *Service) issue(ctx context.Context, q store.Query, sender any, kind str
 	_, err = q.ExecContext(ctx, "INSERT INTO invitations(token_hash,kind,sender_id,created_at,expires_at) VALUES(?,?,?,?,?)", Hash(token), kind, sender, now, now+7*86400)
 	return token, err
 }
-
 func (s *Service) Bootstrap(ctx context.Context) (token string, err error) {
 	err = s.Store.Write(ctx, func(q store.Query) error {
 		var count int
@@ -67,7 +69,6 @@ func (s *Service) Bootstrap(ctx context.Context) (token string, err error) {
 	})
 	return
 }
-
 func (s *Service) Issue(ctx context.Context, actor int64, kind string) (token string, err error) {
 	err = s.Store.Write(ctx, func(q store.Query) error {
 		u, e := store.UserFor(ctx, q, actor, false)
@@ -100,7 +101,7 @@ func (s *Service) Issue(ctx context.Context, actor int64, kind string) (token st
 				return store.ErrConflict
 			}
 		default:
-			return errors.New("неизвестный вид приглашения")
+			return errors.New(texts.T("internal.identity.service.003"))
 		}
 		token, e = s.issue(ctx, q, actor, kind)
 		return e
@@ -119,7 +120,6 @@ func (s *Service) CancelAccess(ctx context.Context, actor int64) error {
 		return err
 	})
 }
-
 func (s *Service) valid(ctx context.Context, q store.Query, actor int64, hash string) (Invitation, error) {
 	var i Invitation
 	err := q.QueryRowContext(ctx, "SELECT token_hash,kind,sender_id,claimed_by,expires_at,revoked_at,consumed_at FROM invitations WHERE token_hash=?", hash).Scan(&i.Hash, &i.Kind, &i.Sender, &i.Claimed, &i.Expires, &i.Revoked, &i.Consumed)
@@ -152,7 +152,6 @@ func (s *Service) valid(ctx context.Context, q store.Query, actor int64, hash st
 	}
 	return i, nil
 }
-
 func (s *Service) Claim(ctx context.Context, actor int64, name, token string) (kind string, err error) {
 	err = s.Store.Write(ctx, func(q store.Query) error {
 		i, e := s.valid(ctx, q, actor, Hash(token))
@@ -211,11 +210,9 @@ func (s *Service) Claim(ctx context.Context, actor int64, name, token string) (k
 	})
 	return
 }
-
 func (s *Service) Revoke(ctx context.Context, actor int64, token string) error {
 	return s.RevokeHash(ctx, actor, Hash(token))
 }
-
 func (s *Service) CancelPartners(ctx context.Context, actor int64) error {
 	return s.Store.Write(ctx, func(q store.Query) error {
 		if _, err := store.UserFor(ctx, q, actor, false); err != nil {
@@ -225,7 +222,6 @@ func (s *Service) CancelPartners(ctx context.Context, actor int64) error {
 		return err
 	})
 }
-
 func (s *Service) RevokeHash(ctx context.Context, actor int64, hash string) error {
 	return s.Store.Write(ctx, func(q store.Query) error {
 		u, e := store.UserFor(ctx, q, actor, false)
@@ -256,13 +252,13 @@ type Profile struct {
 
 func (s *Service) FinishProfile(ctx context.Context, q store.Query, actor int64, p Profile) error {
 	if strings.TrimSpace(p.City) == "" {
-		return errors.New("укажи город")
+		return errors.New(texts.T("internal.identity.service.004"))
 	}
 	if p.Timezone == "" || p.Timezone == "Local" {
-		return errors.New("неизвестный часовой пояс")
+		return errors.New(texts.T("internal.identity.service.005"))
 	}
 	if _, err := time.LoadLocation(p.Timezone); err != nil {
-		return errors.New("неизвестный часовой пояс")
+		return errors.New(texts.T("internal.identity.service.005"))
 	}
 	u, err := store.UserFor(ctx, q, actor, true)
 	if err != nil {
@@ -319,7 +315,7 @@ func (s *Service) FinishProfile(ctx context.Context, q store.Query, actor int64,
 			return e
 		}
 		for _, i := range pending {
-			payload, _ := json.Marshal(map[string]string{"text": strings.TrimSpace(p.Name) + " теперь в боте 💛 Регистрация готова — осталось подтвердить создание пары.", "invitation_hash": i.hash})
+			payload, _ := json.Marshal(map[string]string{"text": strings.TrimSpace(p.Name) + texts.T("internal.identity.service.006"), "invitation_hash": i.hash})
 			_, e = q.ExecContext(ctx, "INSERT INTO notifications(semantic_key,recipient_id,kind,payload,available_at,expires_at,created_at) VALUES(?,?,'partner_registered',?,?,?,?) ON CONFLICT(semantic_key) DO NOTHING", "invitation:"+i.hash+":registered", i.sender, string(payload), s.Store.Now().Unix(), s.Store.Now().Unix()+48*3600, s.Store.Now().Unix())
 			if e != nil {
 				return e
@@ -329,12 +325,14 @@ func (s *Service) FinishProfile(ctx context.Context, q store.Query, actor int64,
 	_, err = q.ExecContext(ctx, "UPDATE invitations SET consumed_at=? WHERE claimed_by=? AND kind IN ('owner','access') AND consumed_at IS NULL AND revoked_at IS NULL AND expires_at>?", s.Store.Now().Unix(), actor, s.Store.Now().Unix())
 	return err
 }
-
 func (s *Service) Accept(ctx context.Context, actor int64, token string) (pair int64, err error) {
-	err = s.Store.Write(ctx, func(q store.Query) error { var e error; pair, e = s.AcceptIn(ctx, q, actor, Hash(token)); return e })
+	err = s.Store.Write(ctx, func(q store.Query) error {
+		var e error
+		pair, e = s.AcceptIn(ctx, q, actor, Hash(token))
+		return e
+	})
 	return
 }
-
 func (s *Service) AcceptIn(ctx context.Context, q store.Query, actor int64, hash string) (int64, error) {
 	if _, err := store.UserFor(ctx, q, actor, false); err != nil {
 		return 0, err
