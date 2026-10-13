@@ -35,7 +35,7 @@ func TestTelegramCardCoverAndTwoPhotosOnDemand(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := actions.Service{Store: db}
-	raw, _ := json.Marshal(collection.Input{Title: "Кафе", Categories: []string{"Покушать"}, Photos: []string{"file_cover", "file_second", "file_third"}})
+	raw, _ := json.Marshal(collection.Input{Title: "Кафе", Categories: []string{"Покушать"}, Address: "Старый адрес", MapURL: "https://yandex.ru/maps/org/example/123", Description: "Старое описание", Photos: []string{"file_cover", "file_second", "file_third"}, Sources: []collection.Source{{URL: "https://example.com/place", RetrievedAt: 1}}})
 	draft, err := svc.Prepare(ctx, 1, "place_create", raw)
 	if err != nil {
 		t.Fatal(err)
@@ -96,6 +96,35 @@ func TestTelegramCardCoverAndTwoPhotosOnDemand(t *testing.T) {
 	if len(photos) != 3 || photos[1] != "file_second" || photos[2] != "file_third" {
 		t.Fatal("extra photos not on demand", photos)
 	}
+
+	// Edit is visible on the card and preloads values. Keeping categories and
+	// address, clearing the map and changing description still needs a final save.
+	editPlace := out.Place
+	router.collectionCallback(ctx, b, &models.CallbackQuery{ID: "edit", From: models.User{ID: 1, FirstName: "Owner"}, Data: "edit:" + strconvID(editPlace)})
+	editMessage := func(text string) {
+		router.Handle(ctx, b, &models.Update{Message: &models.Message{From: &models.User{ID: 1, FirstName: "Owner"}, Chat: models.Chat{ID: 1, Type: models.ChatTypePrivate}, Text: text}})
+	}
+	editMessage("Новое кафе")
+	editMessage("/skip")
+	editMessage("/skip")
+	editMessage("/clear")
+	editMessage("Новое описание")
+	var editDraft string
+	if err = db.DB.QueryRowContext(ctx, "SELECT id FROM drafts WHERE user_id=1 AND kind='place_edit' AND applied_at IS NULL ORDER BY created_at DESC LIMIT 1").Scan(&editDraft); err != nil {
+		t.Fatal("edit preview was not prepared", err)
+	}
+	cardService := collection.Service{Store: db}
+	before, err := cardService.Get(ctx, db.DB, 1, editPlace)
+	if err != nil || before.Title != "Кафе" {
+		t.Fatal("edit saved without confirmation", before, err)
+	}
+	if _, err = svc.Apply(ctx, 1, editDraft); err != nil {
+		t.Fatal(err)
+	}
+	after, err := cardService.Get(ctx, db.DB, 1, editPlace)
+	if err != nil || after.Title != "Новое кафе" || strings.Join(after.Categories, ",") != "Покушать" || after.Address != "Старый адрес" || after.MapURL != "" || after.Description != "Новое описание" || after.Author != "Owner" || len(after.Photos) != 3 || len(after.Sources) != 1 || after.Mine != "want" || after.Version != 2 {
+		t.Fatal("edit did not preserve card state", after, err)
+	}
 	router.Handle(ctx, b, &models.Update{Message: &models.Message{From: &models.User{ID: 1}, Chat: models.Chat{ID: -1, Type: models.ChatTypeGroup}, Text: "/add Group idea"}})
 	var count int
 	db.DB.QueryRowContext(ctx, "SELECT count(*) FROM drafts WHERE kind='place_create'").Scan(&count)
@@ -112,8 +141,9 @@ func TestTelegramCardCoverAndTwoPhotosOnDemand(t *testing.T) {
 		t.Fatal(err)
 	}
 	json.Unmarshal(result, &out)
+	beforeTextOnly := len(texts)
 	router.card(ctx, b, 1, out.Place)
-	if len(photos) != 3 || len(texts) != 2 || strings.Contains(texts[1], "Адрес не указан") {
+	if len(photos) != 3 || len(texts) != beforeTextOnly+1 || strings.Contains(texts[len(texts)-1], "Адрес не указан") {
 		t.Fatal("text-only card failed", photos, texts)
 	}
 }
@@ -140,12 +170,12 @@ func TestPlaceCardActionsExplainInterestState(t *testing.T) {
 	}
 
 	justSaved := labels(placeCardRows(collection.Card{Mine: "want"}, "7", "🗄 Убрать в архив", true))
-	if len(justSaved) != 1 || justSaved[0] != "📝 В черновик свидания" {
+	if len(justSaved) != 2 || justSaved[0] != "📝 В черновик свидания" || !contains(justSaved, "✏️ Редактировать карточку") {
 		t.Fatal("new card has redundant actions", justSaved)
 	}
 
 	author := labels(placeCardRows(collection.Card{Mine: "want"}, "7", "🗄 Убрать в архив", false))
-	if !contains(author, "🙅 Изменить: не моё") || contains(author, "❤️ Хочу сходить") || !contains(author, "🗄 Убрать в архив") {
+	if !contains(author, "🙅 Изменить: не моё") || contains(author, "❤️ Хочу сходить") || !contains(author, "🗄 Убрать в архив") || !contains(author, "✏️ Редактировать карточку") {
 		t.Fatal("author actions do not reflect saved interest", author)
 	}
 

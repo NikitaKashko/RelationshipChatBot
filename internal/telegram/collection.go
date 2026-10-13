@@ -94,6 +94,7 @@ func placeCardRows(c collection.Card, key, archiveText string, justSaved bool) [
 		}
 	}
 	rows = append(rows, []models.InlineKeyboardButton{{Text: texts.T("internal.telegram.collection.010"), CallbackData: "candidate:" + key}})
+	rows = append(rows, []models.InlineKeyboardButton{{Text: texts.T("internal.telegram.collection.049"), CallbackData: "edit:" + key}})
 	if !justSaved {
 		rows = append(rows, []models.InlineKeyboardButton{{Text: archiveText, CallbackData: "archive:" + key}})
 	}
@@ -104,7 +105,7 @@ func (r *Router) collectionCallback(ctx context.Context, b *bot.Bot, q *models.C
 	if !ok {
 		return false
 	}
-	if kind != "want" && kind != "uninterested" && kind != "candidate" && kind != "archive" && kind != "photos" {
+	if kind != "want" && kind != "uninterested" && kind != "candidate" && kind != "archive" && kind != "photos" && kind != "edit" {
 		return false
 	}
 	id, err := strconv.ParseInt(raw, 10, 64)
@@ -128,6 +129,10 @@ func (r *Router) collectionCallback(ctx context.Context, b *bot.Bot, q *models.C
 	}
 	if kind == "archive" {
 		r.draft(ctx, b, q.From.ID, "place_archive", collection.Archive{ID: id, Version: c.Version, Archived: !c.Archived}, texts.T("internal.telegram.collection.011")+c.Title+"»?")
+		return true
+	}
+	if kind == "edit" {
+		r.startEntry(ctx, b, q.From.ID, entry{Kind: "card_edit", Card: c.Input, EditID: c.ID, EditVersion: c.Version, EditAuthor: c.Author})
 		return true
 	}
 	if kind == "candidate" {

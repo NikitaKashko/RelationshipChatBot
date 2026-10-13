@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -18,11 +19,14 @@ import (
 )
 
 type entry struct {
-	Kind     string
-	Step     int
-	Card     collection.Input
-	Plan     planning.Input
-	Location identity.Location
+	Kind        string
+	Step        int
+	Card        collection.Input
+	Plan        planning.Input
+	Location    identity.Location
+	EditID      int64
+	EditVersion int64
+	EditAuthor  string
 }
 
 func (r *Router) addOptions(ctx context.Context, b *bot.Bot, actor int64) {
@@ -61,7 +65,7 @@ func (r *Router) startEntry(ctx context.Context, b *bot.Bot, actor int64, e entr
 		r.send(ctx, b, actor, publicError(err), nil)
 		return
 	}
-	if e.Kind != "card" && e.Kind != "lookup" {
+	if e.Kind != "card" && e.Kind != "lookup" && e.Kind != "card_edit" {
 		pair, err := store.PairFor(ctx, r.Store.DB, actor)
 		if err != nil || pair == 0 {
 			r.send(ctx, b, actor, texts.T("internal.telegram.entry.012"), nil)
@@ -108,6 +112,12 @@ func (r *Router) saveEntry(ctx context.Context, b *bot.Bot, actor int64, e entry
 		prompt = texts.T("internal.telegram.entry.014")
 	case "card":
 		prompt = []string{texts.T("internal.telegram.entry.015"), texts.T("internal.telegram.entry.016"), texts.T("internal.telegram.entry.017"), texts.T("internal.telegram.entry.018")}[e.Step]
+	case "card_edit":
+		current := []string{e.Card.Title, strings.Join(e.Card.Categories, ", "), e.Card.Address, e.Card.MapURL, e.Card.Description}[e.Step]
+		if strings.TrimSpace(current) == "" {
+			current = texts.T("internal.telegram.entry.041")
+		}
+		prompt = fmt.Sprintf([]string{texts.T("internal.telegram.entry.036"), texts.T("internal.telegram.entry.037"), texts.T("internal.telegram.entry.038"), texts.T("internal.telegram.entry.039"), texts.T("internal.telegram.entry.040")}[e.Step], current)
 	case "date":
 		prompt = texts.T("internal.telegram.entry.019")
 	case "pair_location":
@@ -116,6 +126,12 @@ func (r *Router) saveEntry(ctx context.Context, b *bot.Bot, actor int64, e entry
 		prompt = []string{texts.T("internal.telegram.entry.020"), texts.T("internal.telegram.entry.021"), texts.T("internal.telegram.entry.022"), texts.T("internal.telegram.entry.023")}[e.Step]
 	}
 	markup := navButtons(texts.T("internal.telegram.entry.024"), "entry_cancel")
+	if e.Kind == "card_edit" {
+		markup = navButtons(texts.T("internal.telegram.entry.042"), "skip", texts.T("internal.telegram.entry.024"), "entry_cancel")
+		if e.Step >= 2 {
+			markup = navButtons(texts.T("internal.telegram.entry.042"), "skip", texts.T("internal.telegram.entry.043"), "clear", texts.T("internal.telegram.entry.024"), "entry_cancel")
+		}
+	}
 	if e.Kind == "pair_location" && e.Step == 1 {
 		markup = models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: texts.T("internal.telegram.router.007"), CallbackData: "entry:location_moscow"}}, {{Text: texts.T("internal.telegram.entry.024"), CallbackData: "menu:entry_cancel"}}}}
 	}
@@ -207,7 +223,7 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 		r.aiMessage(ctx, b, actor, texts.T("internal.telegram.entry.027"))
 		return true
 	}
-	if strings.HasPrefix(text, "/") && text != "/skip" {
+	if strings.HasPrefix(text, "/") && text != "/skip" && text != "/clear" {
 		r.Store.DB.ExecContext(ctx, "DELETE FROM drafts WHERE user_id=? AND kind='ui_entry'", actor)
 		return false
 	}
@@ -220,7 +236,9 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 		return false
 	}
 	value := text
-	if text == "/skip" {
+	keep := text == "/skip"
+	clear := text == "/clear"
+	if keep || clear {
 		value = ""
 	}
 	done := false
@@ -254,6 +272,49 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 			e.Card.Address = value
 		case 3:
 			e.Card.MapURL = value
+			done = true
+		}
+		e.Step++
+	case "card_edit":
+		switch e.Step {
+		case 0:
+			if clear || (!keep && strings.TrimSpace(value) == "") {
+				r.send(ctx, b, actor, texts.T("internal.telegram.entry.045"), nil)
+				return true
+			}
+			if !keep {
+				e.Card.Title = value
+			}
+		case 1:
+			if clear || (!keep && strings.TrimSpace(value) == "") {
+				r.send(ctx, b, actor, texts.T("internal.telegram.entry.045"), nil)
+				return true
+			}
+			if !keep {
+				e.Card.Categories = strings.Split(value, ",")
+			}
+		case 2:
+			if clear {
+				e.Card.Address = ""
+			} else if !keep {
+				e.Card.Address = value
+			}
+		case 3:
+			if !keep && !clear && !collection.ValidURL(value) {
+				r.send(ctx, b, actor, texts.T("internal.telegram.entry.046"), nil)
+				return true
+			}
+			if clear {
+				e.Card.MapURL = ""
+			} else if !keep {
+				e.Card.MapURL = value
+			}
+		case 4:
+			if clear {
+				e.Card.Description = ""
+			} else if !keep {
+				e.Card.Description = value
+			}
 			done = true
 		}
 		e.Step++
@@ -322,6 +383,15 @@ func (r *Router) entryMessage(ctx context.Context, b *bot.Bot, actor int64, text
 				return true
 			}
 			r.draft(ctx, b, actor, "place_create", e.Card, collection.Render(collection.Card{Input: e.Card, Author: texts.T("internal.telegram.entry.031")}))
+		} else if e.Kind == "card_edit" {
+			if err := collection.Validate(e.Card); err != nil {
+				e.Step = 0
+				r.saveEntry(ctx, b, actor, e)
+				r.send(ctx, b, actor, publicError(err), nil)
+				return true
+			}
+			preview := texts.T("internal.telegram.entry.044") + collection.Render(collection.Card{Input: e.Card, Author: e.EditAuthor})
+			r.draft(ctx, b, actor, "place_edit", collection.Edit{ID: e.EditID, Version: e.EditVersion, Card: e.Card}, preview)
 		} else {
 			svc := planning.Service{Store: r.Store}
 			preview, err := svc.Preview(ctx, r.Store.DB, actor, e.Plan)

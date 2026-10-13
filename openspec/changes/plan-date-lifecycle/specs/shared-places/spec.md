@@ -56,9 +56,15 @@ When two users form a pair, their non-archived personal place collections SHALL 
 ### Requirement: Editing and archival
 Both partners SHALL be able to edit shared card fields, archive cards and restore them. Original authorship and visit history SHALL survive archival; personal opinions and reviews SHALL be editable only by their author.
 
+The Telegram card SHALL expose a visible edit action. Manual editing SHALL preload the current values, allow keeping each value without retyping it, allow clearing optional text fields, and prepare a version-checked preview before saving.
+
 #### Scenario: Archived planned place
 - **WHEN** a card referenced in an old plan is archived
 - **THEN** the old plan retains its reference and historical description while automatic recommendations exclude the archived card.
+
+#### Scenario: Partner edits a shared card
+- **WHEN** either partner opens a card, changes its title or optional details and confirms the preview
+- **THEN** the current card is updated, its original author, individual interests, photos, sources and visit history remain intact, and a concurrent newer edit is not overwritten.
 
 ### Requirement: Saved search presentation
 After a searched place is saved, the bot SHALL visibly confirm collection entry and present the actions allowed for its current state. Collection cards SHALL omit unavailable optional fields and legacy unknown-field annotations.
