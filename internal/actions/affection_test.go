@@ -19,7 +19,7 @@ func TestAffectionNicknameCooldownAndNoPhraseRepeat(t *testing.T) {
 	d.apply(t, 2, "notification_names", affection.Names{Partner: "зайка"})
 	previous := ""
 	for i := 0; i < 15; i++ {
-		if err := s.Click(d.ctx, 1, "thinking"); err != nil {
+		if err := s.Click(d.ctx, 1, "kiss"); err != nil {
 			t.Fatal(err)
 		}
 		var raw string
@@ -38,13 +38,13 @@ func TestAffectionNicknameCooldownAndNoPhraseRepeat(t *testing.T) {
 		d.now = d.now.Add(time.Minute)
 	}
 	if d.count(t, "SELECT count(*) FROM api_usage") != 0 {
-		t.Fatal("attention called paid API")
+		t.Fatal("affection called paid API")
 	}
 	if d.count(t, "SELECT count(*) FROM notifications WHERE expires_at-created_at=43200") != 15 {
-		t.Fatal("attention expiry not twelve hours")
+		t.Fatal("affection expiry not twelve hours")
 	}
 	d.apply(t, 2, "notification_names", affection.Names{})
-	if err := s.Click(d.ctx, 1, "attention"); err != nil {
+	if err := s.Click(d.ctx, 1, "kiss"); err != nil {
 		t.Fatal(err)
 	}
 	var raw string
@@ -52,8 +52,11 @@ func TestAffectionNicknameCooldownAndNoPhraseRepeat(t *testing.T) {
 	if !strings.Contains(raw, "Никита") {
 		t.Fatal("sender name fallback absent")
 	}
-	if err := s.Click(d.ctx, 3, "attention"); !errors.Is(err, store.ErrDenied) {
+	if err := s.Click(d.ctx, 3, "kiss"); !errors.Is(err, store.ErrDenied) {
 		t.Fatal("solo click enqueued", err)
+	}
+	if err := s.Click(d.ctx, 1, "attention"); !errors.Is(err, store.ErrDenied) {
+		t.Fatal("removed attention kind accepted", err)
 	}
 }
 
@@ -62,7 +65,7 @@ func TestAffectionConcurrentClicksOnlyOneAccepted(t *testing.T) {
 	s := affection.Service{Store: d.db}
 	var wg sync.WaitGroup
 	errs := make(chan error, 3)
-	for _, kind := range []string{"attention", "thinking", "hug"} {
+	for _, kind := range []string{"kiss", "thinking", "hug"} {
 		wg.Add(1)
 		go func(kind string) { defer wg.Done(); errs <- s.Click(d.ctx, 1, kind) }(kind)
 	}

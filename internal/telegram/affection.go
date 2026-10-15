@@ -12,7 +12,7 @@ import (
 )
 
 func affectionKeyboard() models.InlineKeyboardMarkup {
-	return models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: texts.T("internal.telegram.affection.001"), CallbackData: "affection:attention"}}, {{Text: texts.T("internal.telegram.affection.002"), CallbackData: "affection:thinking"}, {Text: texts.T("internal.telegram.affection.003"), CallbackData: "affection:hug"}}}}
+	return models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: texts.T("internal.telegram.affection.001"), CallbackData: "affection:kiss"}}, {{Text: texts.T("internal.telegram.affection.002"), CallbackData: "affection:thinking"}, {Text: texts.T("internal.telegram.affection.003"), CallbackData: "affection:hug"}}}}
 }
 func (r *Router) affectionCallback(ctx context.Context, b *bot.Bot, q *models.CallbackQuery) bool {
 	if !strings.HasPrefix(q.Data, "affection:") {

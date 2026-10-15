@@ -5,7 +5,11 @@
 ## ADDED Requirements
 
 ### Requirement: Button initiated affection
-The system SHALL provide «Хочу внимания», «Думаю о тебе» and «Хочу обнять». A single click SHALL enqueue the corresponding message without text entry, confirmation or an AI request. Affection SHALL never be initiated automatically.
+The system SHALL provide «Хочу поцеловать», «Думаю о тебе» and «Хочу обнять». The former «Хочу внимания» action SHALL NOT be offered or accepted. A single click SHALL enqueue the corresponding message without text entry, confirmation or an AI request. Affection SHALL never be initiated automatically.
+
+#### Scenario: Removed attention action
+- **WHEN** the affection menu is rendered or a legacy attention callback is received
+- **THEN** the menu contains the kiss action instead and the legacy action does not enqueue a message.
 
 #### Scenario: Click without active pair
 - **WHEN** a user without an active pair clicks an affection button
